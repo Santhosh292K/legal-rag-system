@@ -1,32 +1,46 @@
-# Environment variables
+# ── Environment variables ────────────────────────────
 .env
+.env.local
+**/.env
+**/.env.local
 
-# Python cache
+# ── Python ───────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .Python
-
-# Vector database (runtime-generated)
-qdrant_db/
-
-# Large generated data files
-data/dataset.csv
-data/final_dataset.json
-data/bm25_idf.json
-data/bm25_vocab.json
-
-# Evaluation output files
-results_*.json
-diagnose_output.txt
-
-# Virtual environment
 venv/
 env/
 .venv/
+*.egg-info/
 
-# IDE files
+# ── rag/ (pipeline) runtime & generated data ─────────
+rag/qdrant_db/
+rag/data/dataset.csv
+rag/data/final_dataset.json
+rag/data/bm25_idf.json
+rag/data/bm25_vocab.json
+rag/results_*.json
+rag/diagnose_output.txt
+
+# ── backend/ ──────────────────────────────────────────
+backend/__pycache__/
+backend/.venv/
+backend/venv/
+
+# ── frontend/ (Next.js) ───────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+frontend/*.tsbuildinfo
+frontend/npm-debug.log*
+frontend/.vercel
+
+# ── IDE / OS ───────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
+.DS_Store

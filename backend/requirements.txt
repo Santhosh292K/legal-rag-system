@@ -1,0 +1,8 @@
+# Backend service deps. Pulls in the full pipeline's requirements (torch,
+# sentence-transformers, qdrant-client, fastapi, ollama, ...) since the
+# backend imports rag/ directly in-process rather than shelling out to it.
+-r ../rag/requirements.txt
+
+# Needed for FastAPI's UploadFile / File(...) multipart form parsing —
+# not required by the pipeline itself, so not already in rag/requirements.txt.
+python-multipart>=0.0.9

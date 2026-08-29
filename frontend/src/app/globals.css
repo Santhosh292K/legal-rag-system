@@ -1,0 +1,176 @@
+@import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: #f6f7fb;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #eef0f6;
+  --border: #e2e4ee;
+  --border-strong: #cdd1e0;
+  --text: #14161f;
+  --text-muted: #5b5f72;
+  --text-faint: #8b8fa3;
+
+  --brand: #4338ca;
+  --brand-strong: #362ea6;
+  --brand-soft: #eeecfd;
+  --brand-contrast: #ffffff;
+
+  --accent: #0d9488;
+
+  --success: #059669;
+  --success-soft: #ecfdf5;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --info: #2563eb;
+  --info-soft: #eff6ff;
+
+  --shadow-color: 220 40% 30%;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0c11;
+  --bg-elevated: #14161f;
+  --bg-subtle: #191b26;
+  --border: #262938;
+  --border-strong: #33374a;
+  --text: #edeef5;
+  --text-muted: #9a9db3;
+  --text-faint: #6d7086;
+
+  --brand: #818cf8;
+  --brand-strong: #a5b4fc;
+  --brand-soft: #201f3d;
+  --brand-contrast: #0b0c11;
+
+  --accent: #2dd4bf;
+
+  --success: #34d399;
+  --success-soft: #0d2420;
+  --warning: #fbbf24;
+  --warning-soft: #2a1f08;
+  --danger: #f87171;
+  --danger-soft: #2a1212;
+  --info: #60a5fa;
+  --info-soft: #101d33;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0c11;
+    --bg-elevated: #14161f;
+    --bg-subtle: #191b26;
+    --border: #262938;
+    --border-strong: #33374a;
+    --text: #edeef5;
+    --text-muted: #9a9db3;
+    --text-faint: #6d7086;
+
+    --brand: #818cf8;
+    --brand-strong: #a5b4fc;
+    --brand-soft: #201f3d;
+    --brand-contrast: #0b0c11;
+
+    --accent: #2dd4bf;
+
+    --success: #34d399;
+    --success-soft: #0d2420;
+    --warning: #fbbf24;
+    --warning-soft: #2a1f08;
+    --danger: #f87171;
+    --danger-soft: #2a1212;
+    --info: #60a5fa;
+    --info-soft: #101d33;
+
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-contrast: var(--brand-contrast);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+::selection {
+  background: var(--brand);
+  color: var(--brand-contrast);
+}
+
+/* Slim, theme-aware scrollbars — default browser scrollbars read as
+   unpolished against a custom dark surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
