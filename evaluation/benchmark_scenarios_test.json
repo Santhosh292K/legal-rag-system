@@ -1,0 +1,159 @@
+[
+  {
+    "query": "A factory owner released toxic chemical waste into the river, killing fish and affecting villagers",
+    "gold_sections": [
+      "IPC_277",
+      "IPC_278",
+      "IPC_284"
+    ],
+    "gold_answer": "Fouling source of water (IPC 277), making atmosphere noxious (IPC 278), and negligent handling of poisonous substance (IPC 284).",
+    "category": "criminal"
+  },
+  {
+    "query": "A political leader made a speech calling for violence against a minority community",
+    "gold_sections": [
+      "IPC_153A",
+      "IPC_505",
+      "UAPA_013"
+    ],
+    "gold_answer": "Promoting enmity between groups (IPC 153A, 3 years), statements creating disharmony (IPC 505), and membership/support of unlawful association (UAPA 13 if applicable).",
+    "category": "criminal"
+  },
+  {
+    "query": "A rickshaw puller was beaten by a local goon who extracted money regularly",
+    "gold_sections": [
+      "IPC_383",
+      "IPC_384",
+      "IPC_386"
+    ],
+    "gold_answer": "Extortion (IPC 383/384, up to 3 years) and extortion by putting person in fear of death or grievous hurt (IPC 386, up to 10 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "An employee stole money from the company cash box over several months",
+    "gold_sections": [
+      "IPC_381",
+      "IPC_408"
+    ],
+    "gold_answer": "Theft by clerk or servant (IPC 381, up to 7 years) and criminal breach of trust by clerk or servant (IPC 408, up to 7 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "A person forged their caste certificate to get government reservation benefits",
+    "gold_sections": [
+      "IPC_468",
+      "IPC_471",
+      "IPC_420"
+    ],
+    "gold_answer": "Forgery for cheating (IPC 468, 7 years), use of forged document (IPC 471), and cheating (IPC 420). The certificate itself can be cancelled.",
+    "category": "criminal"
+  },
+  {
+    "query": "An SHO registered a false FIR against an innocent person at the behest of a politician",
+    "gold_sections": [
+      "IPC_211",
+      "IPC_166"
+    ],
+    "gold_answer": "Filing a false charge (IPC 211, up to 7 years if offence is capital) and public servant disobeying direction of law (IPC 166).",
+    "category": "police"
+  },
+  {
+    "query": "An officer of a government department demanded a bribe to pass a contractor's bill",
+    "gold_sections": [
+      "PCA_007",
+      "PCA_013"
+    ],
+    "gold_answer": "Taking gratification other than legal remuneration (PCA 7) and criminal misconduct (PCA 13) \u2014 both cognizable, minimum 3 years.",
+    "category": "police"
+  },
+  {
+    "query": "A girl was forced into marriage at 17 years of age. Is this legal?",
+    "gold_sections": [
+      "IPC_493",
+      "POCSO_003"
+    ],
+    "gold_answer": "Child marriage is an offence. POCSO Section 3/4 applies if consummated; IPC 493 covers cohabitation by deception. The marriage is voidable at her option.",
+    "category": "domestic"
+  },
+  {
+    "query": "A private company is storing Aadhaar-linked data without consent. Is this an offence?",
+    "gold_sections": [
+      "ITA_043A",
+      "ITA_072A"
+    ],
+    "gold_answer": "Failure to protect sensitive personal data (ITA 43A, compensation liability) and disclosure without consent (ITA 72A, imprisonment up to 3 years).",
+    "category": "cyber"
+  },
+  {
+    "query": "A man wrote a will leaving all property to his son, but he was of unsound mind when writing it",
+    "gold_sections": [
+      "ICA_011",
+      "ICA_012"
+    ],
+    "gold_answer": "A person of unsound mind cannot enter into a valid contract or execute a will under ICA Sections 11 and 12 \u2014 the will is void.",
+    "category": "civil_contract"
+  },
+  {
+    "query": "Two companies formed a cartel and fixed prices for essential medicines. Is this legal?",
+    "gold_sections": [
+      "ICA_023"
+    ],
+    "gold_answer": "Agreement in restraint of trade (ICA 23) is void. Competition Commission of India jurisdiction also applies under the Competition Act (not indexed in this system).",
+    "category": "civil_contract"
+  },
+  {
+    "query": "A landlord wants to evict a tenant who has been living for 15 years and has no written agreement",
+    "gold_sections": [
+      "TPA_108",
+      "SRA_006"
+    ],
+    "gold_answer": "Tenant rights under TPA Section 108 (duties of lessor). Long-term tenant without written agreement may have month-to-month tenancy; notice required. SRA 6 protects against forcible dispossession.",
+    "category": "civil_property"
+  },
+  {
+    "query": "My business partner promised to sell me his share of property but now refuses. Can I force him?",
+    "gold_sections": [
+      "SRA_010",
+      "SRA_014"
+    ],
+    "gold_answer": "Specific performance of a contract to transfer property may be enforced under Specific Relief Act Section 10.",
+    "category": "civil_property"
+  },
+  {
+    "query": "A tribal farmer's land was forcibly acquired by a private mining company with support from local officials",
+    "gold_sections": [
+      "SCST_003",
+      "IPC_447",
+      "COI_300A"
+    ],
+    "gold_answer": "Atrocity under SCST Act Section 3 (wrongful occupation of tribal land); criminal trespass (IPC 447); compulsory acquisition requires just compensation under Article 300A of Constitution.",
+    "category": "scst"
+  },
+  {
+    "query": "What is the limitation period for filing a suit to recover money?",
+    "gold_sections": [
+      "LA_003"
+    ],
+    "gold_answer": "A suit for money recovery must be filed within 3 years from the date the money becomes due (Limitation Act, Article 18 / Section 3).",
+    "category": "procedural"
+  },
+  {
+    "query": "A soldier tortured a civilian in a conflict area. Is the army officer protected from prosecution?",
+    "gold_sections": [
+      "COI_020",
+      "COI_021",
+      "UAPA_049"
+    ],
+    "gold_answer": "No blanket immunity for rights violations (Articles 20-21 of Constitution). UAPA Section 49 provides some protection for acts in good faith under the Act.",
+    "category": "constitutional"
+  },
+  {
+    "query": "What documents are considered as primary evidence under Indian evidence law?",
+    "gold_sections": [
+      "IEA_062",
+      "IEA_064"
+    ],
+    "gold_answer": "Primary evidence is the document itself (IEA 62). Secondary evidence (copies) is admissible in specific circumstances under IEA 64 / BSA equivalent.",
+    "category": "definition"
+  }
+]

@@ -1,0 +1,310 @@
+[
+  {
+    "query": "A 16-year-old boy was caught with 500 grams of cannabis. What is the punishment?",
+    "gold_sections": [
+      "NDPS_020",
+      "NDPS_027"
+    ],
+    "gold_answer": "Possession of small quantity of cannabis (NDPS 20) is punishable with 6 months to 1 year. As a juvenile, the Juvenile Justice Act would also apply alongside NDPS.",
+    "category": "criminal"
+  },
+  {
+    "query": "A person kidnapped a child and demanded ransom from parents",
+    "gold_sections": [
+      "IPC_363",
+      "IPC_364A"
+    ],
+    "gold_answer": "Kidnapping from lawful guardianship (IPC 363, 7 years) and kidnapping for ransom (IPC 364A, death or imprisonment for life).",
+    "category": "criminal"
+  },
+  {
+    "query": "A teacher sexually abused a 14-year-old student",
+    "gold_sections": [
+      "POCSO_004",
+      "IPC_376C"
+    ],
+    "gold_answer": "Penetrative sexual assault of minor under POCSO Section 4, and sexual intercourse by person in authority IPC 376C.",
+    "category": "criminal"
+  },
+  {
+    "query": "A man used the name and signature of a deceased person to sell ancestral property",
+    "gold_sections": [
+      "IPC_463",
+      "IPC_467",
+      "IPC_420"
+    ],
+    "gold_answer": "Forgery (IPC 463/467, up to life imprisonment for valuable security) and cheating (IPC 420, up to 7 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "A gang of six men robbed a jewellery shop at gunpoint and tied up the employees",
+    "gold_sections": [
+      "IPC_391",
+      "IPC_395",
+      "IPC_397"
+    ],
+    "gold_answer": "Dacoity (IPC 391/395, rigorous imprisonment for life) and dacoity with attempt to cause death or grievous hurt (IPC 397, minimum 7 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "A builder sold the same flat to two different buyers using duplicate sale deeds",
+    "gold_sections": [
+      "IPC_420",
+      "IPC_467",
+      "IPC_468"
+    ],
+    "gold_answer": "Cheating (IPC 420), forgery of a valuable security (IPC 467, life imprisonment or 10 years), and forgery for cheating (IPC 468, 7 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "Ramesh is a doctor who got fake degree and practiced medicine, but a patient died under his medication",
+    "gold_sections": [
+      "IPC_304A",
+      "IPC_416",
+      "IPC_419",
+      "IPC_468",
+      "IPC_420"
+    ],
+    "gold_answer": "Multiple offences: death by negligent act (IPC 304A, up to 2 years), cheating by personation (IPC 416/419, up to 3 years), forgery (IPC 468, up to 7 years), cheating (IPC 420, up to 7 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "A man drove drunk and hit a pedestrian who died. What crime has he committed?",
+    "gold_sections": [
+      "IPC_304A",
+      "IPC_279"
+    ],
+    "gold_answer": "Rash negligent driving causing death (IPC 304A, 2 years) and rash driving (IPC 279, 6 months).",
+    "category": "criminal"
+  },
+  {
+    "query": "A man attacked his neighbour with acid causing disfigurement",
+    "gold_sections": [
+      "IPC_326A",
+      "IPC_326B"
+    ],
+    "gold_answer": "Acid attack causing grievous hurt (IPC 326A, minimum 10 years up to life) and attempt to throw acid (IPC 326B, minimum 5 years).",
+    "category": "criminal"
+  },
+  {
+    "query": "A middleman charged 40% commission to process a government subsidy for a farmer",
+    "gold_sections": [
+      "PCA_008",
+      "IPC_420"
+    ],
+    "gold_answer": "Taking illegal gratification by public servant (PCA 8) and cheating (IPC 420) if misrepresentation involved.",
+    "category": "police"
+  },
+  {
+    "query": "A sub-inspector took 50,000 rupees bribe from a suspect to drop the FIR",
+    "gold_sections": [
+      "PCA_013",
+      "PCA_014"
+    ],
+    "gold_answer": "Criminal misconduct by public servant under Prevention of Corruption Act Section 13, punishable with minimum 4 years (PCA 14).",
+    "category": "police"
+  },
+  {
+    "query": "A government contractor inflated bills and submitted them for payment \u2014 defrauding Rs 2 crores",
+    "gold_sections": [
+      "IPC_420",
+      "PCA_013"
+    ],
+    "gold_answer": "Cheating (IPC 420) and criminal misconduct / financial fraud by a public servant (PCA 13) \u2014 both cognizable and triable by Sessions Court.",
+    "category": "police"
+  },
+  {
+    "query": "An employee was terminated without notice after reporting corruption by his manager to authorities",
+    "gold_sections": [
+      "PCA_019"
+    ],
+    "gold_answer": "Whistleblower protection \u2014 though India lacks a comprehensive whistleblower statute for private sector, PCA Section 19 provides some procedural protection for complaints against public servants.",
+    "category": "police"
+  },
+  {
+    "query": "A police officer arrested Ravi without any reason and kept him in lockup for 5 days",
+    "gold_sections": [
+      "IPC_342",
+      "IPC_344",
+      "IPC_166"
+    ],
+    "gold_answer": "Wrongful confinement for 3+ days (IPC 344, up to 2 years) and public servant disobeying law (IPC 166).",
+    "category": "police"
+  },
+  {
+    "query": "A husband beat his wife daily and his parents demanded more dowry",
+    "gold_sections": [
+      "IPC_498A",
+      "IPC_304B"
+    ],
+    "gold_answer": "Cruelty by husband or relatives (IPC 498A, up to 3 years) and dowry death provisions (IPC 304B if death occurs).",
+    "category": "domestic"
+  },
+  {
+    "query": "A man sent obscene images to a woman repeatedly on WhatsApp without her consent",
+    "gold_sections": [
+      "ITA_066A",
+      "IPC_509"
+    ],
+    "gold_answer": "Sending obscene material via electronic means (ITA 66A, repealed but BNS successor applies) and insulting modesty of a woman (IPC 509).",
+    "category": "cyber"
+  },
+  {
+    "query": "A software engineer hacked into a bank system and transferred 10 lakhs to his account",
+    "gold_sections": [
+      "ITA_066",
+      "IPC_420"
+    ],
+    "gold_answer": "Hacking/unauthorised access (ITA Section 66, up to 3 years) and cheating (IPC 420, up to 7 years).",
+    "category": "cyber"
+  },
+  {
+    "query": "A software developer uploaded a pirated movie on a server and charged users for access",
+    "gold_sections": [
+      "ITA_066",
+      "ITA_043"
+    ],
+    "gold_answer": "Unauthorised download/sharing of copyrighted content (ITA 43 and 66) \u2014 civil and criminal liability. Copyright Act provisions also apply.",
+    "category": "cyber"
+  },
+  {
+    "query": "I signed a contract under threat and now want to cancel it. Can I?",
+    "gold_sections": [
+      "ICA_015",
+      "ICA_019"
+    ],
+    "gold_answer": "Contract formed under coercion is voidable at the victim party option under ICA Section 19, read with Section 15.",
+    "category": "civil_contract"
+  },
+  {
+    "query": "My employer has not paid salary for three months. What can I do legally?",
+    "gold_sections": [
+      "ICA_037"
+    ],
+    "gold_answer": "Failure to pay salary is a breach of the service contract (ICA 37). A civil money suit or labour court complaint is the remedy; IPC 403 may apply if funds were diverted.",
+    "category": "civil_contract"
+  },
+  {
+    "query": "Can a will be challenged in court by a brother who was excluded from inheritance?",
+    "gold_sections": [
+      "ICA_011",
+      "IEA_068"
+    ],
+    "gold_answer": "A will can be challenged on grounds of lack of testamentary capacity (ICA 11), undue influence, or fraud. Proof of execution of the will is governed by IEA 68.",
+    "category": "civil_contract"
+  },
+  {
+    "query": "A landlord cut off water and electricity to force the tenant to vacate",
+    "gold_sections": [
+      "IPC_441",
+      "SRA_006"
+    ],
+    "gold_answer": "Criminal trespass / wrongful eviction (IPC 441) and recovery of possession by dispossessed person (SRA Section 6).",
+    "category": "civil_property"
+  },
+  {
+    "query": "Neighbour encroached on my land and built a wall on my plot. What are my legal options?",
+    "gold_sections": [
+      "IPC_447",
+      "TPA_005",
+      "SRA_006"
+    ],
+    "gold_answer": "Criminal trespass (IPC 447); ownership protected under Transfer of Property Act; recovery of possession available under SRA Section 6.",
+    "category": "civil_property"
+  },
+  {
+    "query": "A buyer paid full price for a flat but the developer disappeared without handing over possession",
+    "gold_sections": [
+      "IPC_420",
+      "SRA_010"
+    ],
+    "gold_answer": "Cheating (IPC 420, up to 7 years) and specific performance suit under SRA Section 10 to compel delivery of possession.",
+    "category": "civil_property"
+  },
+  {
+    "query": "My relative transferred property to me as a gift. What formalities are required for it to be valid?",
+    "gold_sections": [
+      "TPA_122",
+      "TPA_123"
+    ],
+    "gold_answer": "A gift of immovable property must be made by a registered instrument signed by the donor and attested by two witnesses (TPA 123). TPA 122 defines gift.",
+    "category": "civil_property"
+  },
+  {
+    "query": "My supplier gave me a cheque for 5 lakhs which bounced. What can I do?",
+    "gold_sections": [],
+    "gold_answer": "Cheque dishonour is punishable under NI Act Section 138. NOTE: This act is not currently indexed in this RAG system.",
+    "category": "ni_act_gap"
+  },
+  {
+    "query": "Upper caste landlord refused to allow a Dalit worker entry to the village well",
+    "gold_sections": [
+      "SCST_003"
+    ],
+    "gold_answer": "Atrocity under SC/ST Prevention of Atrocities Act Section 3 \u2014 denying access to public facilities based on caste is a cognizable offence.",
+    "category": "scst"
+  },
+  {
+    "query": "What is the punishment for murder under Indian law?",
+    "gold_sections": [
+      "IPC_302",
+      "BNS_103"
+    ],
+    "gold_answer": "Murder under IPC Section 302 is punishable with death or imprisonment for life, and fine. Equivalent provision in BNS is Section 103.",
+    "category": "punitive"
+  },
+  {
+    "query": "How do I file an anticipatory bail application? Which court do I approach?",
+    "gold_sections": [
+      "CRPC_438"
+    ],
+    "gold_answer": "Anticipatory bail under CrPC Section 438 / BNSS Section 482 is filed in the Sessions Court or High Court before arrest.",
+    "category": "procedural"
+  },
+  {
+    "query": "A person was held in custody for 90 days without being produced before a magistrate",
+    "gold_sections": [
+      "CRPC_167",
+      "COI_022"
+    ],
+    "gold_answer": "Article 22 of the Constitution and CrPC 167 require production before magistrate within 24 hours. Continued detention without this is unconstitutional.",
+    "category": "constitutional"
+  },
+  {
+    "query": "A person was detained without trial under a special security act for 18 months",
+    "gold_sections": [
+      "UAPA_019",
+      "COI_022"
+    ],
+    "gold_answer": "Preventive detention under UAPA Section 19; must comply with Article 22 safeguards (maximum 3 months without Advisory Board review under ordinary detention laws, different under UAPA).",
+    "category": "constitutional"
+  },
+  {
+    "query": "An accused person was denied access to a lawyer during police interrogation",
+    "gold_sections": [
+      "COI_022",
+      "CRPC_041D"
+    ],
+    "gold_answer": "Right to be represented by a legal practitioner (Article 22 of the Constitution); arrested person has right to consult lawyer under CrPC 41D.",
+    "category": "constitutional"
+  },
+  {
+    "query": "What is culpable homicide not amounting to murder and how does it differ from murder?",
+    "gold_sections": [
+      "IPC_299",
+      "IPC_300",
+      "IPC_304"
+    ],
+    "gold_answer": "IPC 299 defines culpable homicide; IPC 300 defines how it becomes murder. IPC 304 prescribes punishment (10 years to life) for culpable homicide not amounting to murder.",
+    "category": "definition"
+  },
+  {
+    "query": "A school published the home address of a minor abuse survivor in their annual report",
+    "gold_sections": [
+      "POCSO_023",
+      "POCSO_024"
+    ],
+    "gold_answer": "Disclosure of identity of a child victim is prohibited under POCSO Section 23 \u2014 punishable with fine or up to 6 months or both.",
+    "category": "pocso"
+  }
+]

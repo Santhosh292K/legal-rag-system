@@ -1,0 +1,32 @@
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Vector database (runtime-generated)
+qdrant_db/
+
+# Large generated data files
+data/dataset.csv
+data/final_dataset.json
+data/bm25_idf.json
+data/bm25_vocab.json
+
+# Evaluation output files
+results_*.json
+diagnose_output.txt
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp

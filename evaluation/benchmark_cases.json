@@ -1,0 +1,226 @@
+[
+    {
+        "case_id": "CASE_001",
+        "description": "Road accident with death — drunk driving scenario",
+        "query": "Based on the FIR and medical report, which sections apply and what is the likely punishment?",
+        "case_documents": [
+            {
+                "document_id": "FIR_001",
+                "doc_type": "FIR",
+                "text": "On 12-Aug-2025 at 11:45 PM, accused Santosh Kumar (age 32) drove his car at high speed under the influence of alcohol and struck a pedestrian, Ramaiah (age 55) near PWD Road, Hyderabad. Ramaiah was declared dead on arrival at NIMS Hospital. Blood alcohol level of accused measured at 0.12% by breath analyser. Accused fled the scene but was apprehended 2 km away."
+            },
+            {
+                "document_id": "MR_001",
+                "doc_type": "Medical Report",
+                "text": "Deceased Ramaiah — multiple blunt trauma injuries. Cause of death: severe head injury and internal haemorrhage consistent with vehicular collision. TOD approximately 11:50 PM. No evidence of pre-existing medical conditions."
+            }
+        ],
+        "gold_sections": [
+            "BNS_106",
+            "BNS_261"
+        ],
+        "gold_answer": "Offence occurred 12-Aug-2025, after BNS came into force (1-Jul-2024), so BNS applies, not IPC. Death by rash/negligent driving with hit-and-run (accused fled the scene) under BNS 106 — enhanced punishment up to 10 years + fine (not the base 5-year term, since the driver fled). Rash driving endangering life (BNS 261, up to 6 months). Drunk driving (0.12% BAC) aggravates culpability.",
+        "expected_alea_bands": {
+            "BNS_106": "Strong",
+            "BNS_261": "Strong"
+        },
+        "category": "criminal_road_accident"
+    },
+    {
+        "case_id": "CASE_002",
+        "description": "Dowry harassment and domestic violence with medical evidence",
+        "query": "The victim filed a statement and medical report is attached. Which sections can be invoked?",
+        "case_documents": [
+            {
+                "document_id": "STMT_002",
+                "doc_type": "Witness Statement",
+                "text": "Priya Reddy (complainant / victim) states: My husband Suresh Reddy and in-laws have beaten me repeatedly since marriage 2 years ago. They demand Rs 3 lakh additional dowry or a car. Last week my husband hit me with a belt causing injuries to my arms and back. I was not allowed to leave the house for 4 days. My mother-in-law poured hot water on my hand during an argument about dowry."
+            },
+            {
+                "document_id": "MR_002",
+                "doc_type": "Medical Report",
+                "text": "Patient Priya Reddy, age 26. Presenting injuries: linear laceration marks on left arm (2cm x 0.5cm), scald burn on right hand (3.5 cm, partial thickness), bruising on lumbar region. Injuries consistent with blunt force trauma and hot liquid contact. Approximately 4-7 days old."
+            }
+        ],
+        "gold_sections": [
+            "IPC_498A",
+            "IPC_304B",
+            "IPC_323",
+            "IPC_324"
+        ],
+        "gold_answer": "Cruelty by husband/relatives for dowry (IPC 498A, 3 years); voluntarily causing hurt (IPC 323) and causing hurt by dangerous means (IPC 324). IPC 304B applies if death occurs.",
+        "expected_alea_bands": {
+            "IPC_498A": "Strong",
+            "IPC_323": "Strong",
+            "IPC_304B": "Weak"
+        },
+        "category": "domestic_violence"
+    },
+    {
+        "case_id": "CASE_003",
+        "description": "Cyber fraud — OTP phishing and bank account takeover",
+        "query": "The complainant was defrauded via OTP phishing. Which ITA and IPC sections apply?",
+        "case_documents": [
+            {
+                "document_id": "FIR_003",
+                "doc_type": "FIR",
+                "text": "Complainant Meena Iyer received a call from a person posing as SBI bank official. The caller persuaded her to share OTP for 'KYC verification'. Within 10 minutes, Rs 1,85,000 was transferred out of her saving account in 4 transactions. Call records show the number was a spoofed landline. Transactions were made via net banking to a mule account opened with fake ID in Rajasthan."
+            }
+        ],
+        "gold_sections": [
+            "ITA_066C",
+            "ITA_066D",
+            "IPC_420",
+            "IPC_419"
+        ],
+        "gold_answer": "Identity theft (ITA 66C, 3 years + fine), cheating by personation using computer resource (ITA 66D, 3 years + fine), cheating (IPC 420, 7 years), cheating by personation (IPC 419, 3 years).",
+        "expected_alea_bands": {
+            "ITA_066C": "Strong",
+            "IPC_420": "Strong",
+            "IPC_419": "Partial"
+        },
+        "category": "cyber_fraud"
+    },
+    {
+        "case_id": "CASE_004",
+        "description": "Bribery by a government officer in a public procurement case",
+        "query": "A government officer accepted a bribe. What are the charges based on these case facts?",
+        "case_documents": [
+            {
+                "document_id": "TRAP_004",
+                "doc_type": "FIR",
+                "text": "CBI laid a trap on 15-Jul-2025 after receiving complaint from contractor Arun Seth that Assistant Director (Public Works) Pramod Sharma demanded Rs 80,000 to pass a bill for Rs 12 lakh road repair work. Pre-treated currency notes were handed over by complainant in the presence of two independent witnesses. Sharma was caught red-handed accepting the notes. Notes recovered from Sharma's right trouser pocket."
+            },
+            {
+                "document_id": "CBI_REPORT_004",
+                "doc_type": "Court Order",
+                "text": "CBI verification report: phenolphthalein test positive on Sharma's right hand and currency notes recovered, confirming contact with marked notes. Independent witnesses (IW-1: Rajesh Tripathi, IW-2: Mala Nair) confirm transaction occurred between 3:15 and 3:22 PM."
+            }
+        ],
+        "gold_sections": [
+            "PCA_007",
+            "PCA_013"
+        ],
+        "gold_answer": "Public servant taking gratification (PCA 7, minimum 3 years) and criminal misconduct (PCA 13, minimum 4 years). IPC 161 is the older provision now largely superseded by PCA.",
+        "expected_alea_bands": {
+            "PCA_007": "Strong",
+            "PCA_013": "Strong"
+        },
+        "category": "corruption"
+    },
+    {
+        "case_id": "CASE_005",
+        "description": "POCSO case — teacher sexually assaulting minor student",
+        "query": "Based on the POCSO complaint and medical report, evaluate applicable sections.",
+        "case_documents": [
+            {
+                "document_id": "POCSO_STMT_005",
+                "doc_type": "Witness Statement",
+                "text": "Statement of victim (name withheld, age 13, Class 7): The accused, Subramaniam (science teacher), called me to the lab after school hours on multiple occasions between March and May 2025. He touched me inappropriately on each occasion. On 12-May-2025 he committed penetrative assault. I did not tell my parents for fear. I told my friend Divya (age 13) who told her mother, who filed the complaint. I am afraid but I am telling the truth."
+            },
+            {
+                "document_id": "MR_POCSO_005",
+                "doc_type": "Medical Report",
+                "text": "Victim (minor female, age 13) — medical examination conducted by Dr. Saritha at Government General Hospital. Findings: evidence of old and recent penetrative trauma. Examination consistent with repeated sexual assault. FSL samples collected. No acute injuries inconsistent with reported timeline."
+            }
+        ],
+        "gold_sections": [
+            "POCSO_004",
+            "POCSO_005",
+            "POCSO_006",
+            "POCSO_042",
+            "BNS_068"
+        ],
+        "gold_answer": "Penetrative sexual assault (POCSO 4). Offender is school staff acting in a position of trust/authority — an aggravating circumstance (POCSO 5) — so the punishment is that for aggravated penetrative sexual assault under POCSO 6: minimum 20 years RI up to life or death, plus fine. Offence dated 12-May-2025 (after BNS commencement), so the concurrent general-law provision is BNS 68 (sexual intercourse by a person in a position of authority), not IPC 376C. POCSO 42 requires the court to apply whichever law (POCSO or BNS) prescribes the greater punishment — here, POCSO 6 controls.",
+        "expected_alea_bands": {
+            "POCSO_004": "Strong",
+            "POCSO_005": "Strong",
+            "POCSO_006": "Strong",
+            "BNS_068": "Partial"
+        },
+        "category": "pocso"
+    },
+    {
+        "case_id": "CASE_006",
+        "description": "Acid attack — premeditated disfigurement of former partner",
+        "query": "Man threw acid at woman who rejected his proposal. What charges apply?",
+        "case_documents": [
+            {
+                "document_id": "FIR_006",
+                "doc_type": "FIR",
+                "text": "Complainant Nisha Verma (age 21) states: On 08-Aug-2025 at 07:10 AM near her home, accused Kiran Sharma (ex-boyfriend, age 23) approached her and threw a liquid on her face. She fell and screamed. Neighbours intervened and called police. Kiran fled on a motorcycle. He had previously sent threatening messages on WhatsApp after she ended the relationship."
+            },
+            {
+                "document_id": "MR_006",
+                "doc_type": "Medical Report",
+                "text": "Patient Nisha Verma, age 21. Deep partial and full thickness acid burns covering 35% of face and neck. Liquid confirmed as sulphuric acid (pH 1.2) by FSL report. Permanent disfigurement expected. Three surgeries anticipated. Right eye — corneal damage, vision impairment at 40%."
+            }
+        ],
+        "gold_sections": [
+            "BNS_124",
+            "BNS_109"
+        ],
+        "gold_answer": "Offence occurred 08-Aug-2025, after BNS came into force, so BNS applies, not IPC. Voluntarily causing grievous hurt by acid (BNS 124, minimum 10 years up to life + fine for medical expenses). Attempt to murder (BNS 109, up to 10 years, or life if the offender is already under a life sentence) may also apply given the premeditation and severity (35% burns, permanent disfigurement, partial vision loss).",
+        "expected_alea_bands": {
+            "BNS_124": "Strong",
+            "BNS_109": "Partial"
+        },
+        "category": "criminal_violent"
+    },
+    {
+        "case_id": "CASE_007",
+        "description": "Financial fraud — land sold to multiple buyers with forged documents",
+        "query": "Accused sold same plot 3 times with forged documents. What charges to press?",
+        "case_documents": [
+            {
+                "document_id": "FIR_007",
+                "doc_type": "FIR",
+                "text": "Complainant Harish Agarwal states: He purchased Plot No. 45 at Greenfield Colony from Mukesh Nair for Rs 22 lakh on 10-Jan-2025 vide registered sale deed. Upon visiting the plot, he learnt two others (Suresh Pillai and Kavitha Mohan) also hold registered sale deeds for the same plot, both dated after Jan 2025. Mukesh Nair had obtained duplicate original deeds from the sub-registrar office fraudulently."
+            },
+            {
+                "document_id": "REG_DOC_007",
+                "doc_type": "Court Order",
+                "text": "Sub-Registrar Office investigation report: Original deed for Plot No. 45 stands in CTS file. Two additional sale deeds bearing the same property details were registered on 15-Feb and 12-Mar-2025 using forgery of the pre-existing deed and fabricated NOC from housing authority. Signature of housing authority officer found to be forged."
+            }
+        ],
+        "gold_sections": [
+            "BNS_308",
+            "BNS_338",
+            "BNS_339",
+            "BNS_336"
+        ],
+        "gold_answer": "Sale deeds dated 15-Feb-2025 and 12-Mar-2025, after BNS came into force, so BNS applies, not IPC. Cheating by dishonestly inducing delivery of property (BNS 308, up to 5 years); forgery of a valuable security/registered deed (BNS 338, life or up to 10 years); fraudulently using a forged document as genuine (BNS 339, up to 7 years). Note: this dataset's BNS content does not include a distinct 'forgery for the purpose of cheating' provision matching IPC 468's 7-year term — the closest available entry is the general forgery section (BNS 336, up to 2 years), so this citation is a weaker match than the others.",
+        "expected_alea_bands": {
+            "BNS_308": "Strong",
+            "BNS_338": "Strong",
+            "BNS_339": "Strong",
+            "BNS_336": "Weak"
+        },
+        "category": "property_fraud"
+    },
+    {
+        "case_id": "CASE_008",
+        "description": "Drug trafficking — car stopped at checkpost with commercial quantity of heroin",
+        "query": "Accused caught with 15 grams of high-purity heroin at a checkpost. What NDPS charges apply?",
+        "case_documents": [
+            {
+                "document_id": "FSL_008",
+                "doc_type": "Forensic Report",
+                "text": "Sample reference: NDPS/2025/HYD/441. Substance: white powder (gross weight 15.3 grams) seized from passenger seat of vehicle bearing TS-09-AB-1234, intercepted at Patancheru checkpost on 01-Aug-2025. After chemical analysis: diacetylmorphine (heroin) content 78.4%, net drug weight 12.0 grams. Commercial quantity threshold for heroin: 250 grams (gross). Small quantity threshold: 5 grams (gross)."
+            },
+            {
+                "document_id": "FIR_008",
+                "doc_type": "FIR",
+                "text": "Accused: Dev Kumar (age 27). Intercepted during routine checking. Heroin found concealed inside a gutka pouch in the dashboard. Accused admitted to collecting the packet from a person in Pune and delivering it in Hyderabad for Rs 5,000. No arms or weapons found."
+            }
+        ],
+        "gold_sections": [
+            "NDPS_021"
+        ],
+        "gold_answer": "15.3 grams heroin (gross) is above small quantity (5g) but below commercial quantity (250g). NDPS Section 21 — possession/transport of heroin: rigorous imprisonment 1-10 years + fine.",
+        "expected_alea_bands": {
+            "NDPS_021": "Strong"
+        },
+        "category": "ndps"
+    }
+]

@@ -1,0 +1,119 @@
+{
+  "_meta": {
+    "note": "Phase 3.1 starting ontology. Every section_id here was verified against data/final_dataset.json before being added — see the sandbox check in the conversation this was built in. Elements are drafted from the section's own content field, not scraped from an external source. Treat this as a v1 covering the highest-frequency offences (murder, hurt, theft, robbery, cheating, criminal intimidation) — expand deliberately, verifying each new section the same way, not by bulk-generating.",
+    "version": 1,
+    "sections_covered": 13
+  },
+
+  "IPC_302": {
+    "title": "Murder (punishment)",
+    "elements": [
+      {"id": "death", "description": "the victim died as a result of the accused's act"},
+      {"id": "culpable_act", "description": "the accused committed an act that caused the death"},
+      {"id": "intention_or_knowledge", "description": "the act was done with intention to cause death, or intention to cause bodily injury likely to cause death, or knowledge the act was so imminently dangerous it would likely cause death"},
+      {"id": "human_agency", "description": "the death was caused by a human act, not natural causes or pure accident"}
+    ]
+  },
+  "BNS_103": {
+    "title": "Murder (punishment)",
+    "elements": [
+      {"id": "death", "description": "the victim died as a result of the accused's act"},
+      {"id": "culpable_act", "description": "the accused committed an act that caused the death"},
+      {"id": "intention_or_knowledge", "description": "the act was done with intention to cause death, or intention to cause bodily injury likely to cause death, or knowledge the act was so imminently dangerous it would likely cause death"},
+      {"id": "human_agency", "description": "the death was caused by a human act, not natural causes or pure accident"}
+    ]
+  },
+
+  "IPC_323": {
+    "title": "Voluntarily causing hurt (punishment)",
+    "elements": [
+      {"id": "bodily_pain_or_injury", "description": "the victim suffered bodily pain, disease, or infirmity"},
+      {"id": "voluntary_act", "description": "the accused acted voluntarily, intending or knowing the act would cause hurt"},
+      {"id": "causal_link", "description": "the accused's act directly caused the hurt"}
+    ]
+  },
+  "BNS_115": {
+    "title": "Voluntarily causing hurt (punishment)",
+    "elements": [
+      {"id": "bodily_pain_or_injury", "description": "the victim suffered bodily pain, disease, or infirmity"},
+      {"id": "voluntary_act", "description": "the accused acted voluntarily, intending or knowing the act would cause hurt"},
+      {"id": "causal_link", "description": "the accused's act directly caused the hurt"}
+    ]
+  },
+  "BNS_117": {
+    "title": "Voluntarily causing grievous hurt (punishment)",
+    "elements": [
+      {"id": "grievous_injury", "description": "the injury falls into a grievous category — e.g. permanent damage, fracture, danger to life"},
+      {"id": "voluntary_act", "description": "the accused acted voluntarily, intending or knowing the act would cause grievous hurt"},
+      {"id": "causal_link", "description": "the accused's act directly caused the grievous injury"}
+    ]
+  },
+
+  "IPC_378": {
+    "title": "Theft (definition)",
+    "elements": [
+      {"id": "movable_property", "description": "the property involved is movable property"},
+      {"id": "dishonest_intent", "description": "the taking was done dishonestly, with intent to cause wrongful gain to the accused or wrongful loss to the owner"},
+      {"id": "without_consent", "description": "the property was taken without the owner's consent"},
+      {"id": "taking_out_of_possession", "description": "the property was moved out of the possession of the person it belonged to"}
+    ]
+  },
+  "IPC_379": {
+    "title": "Theft (punishment)",
+    "elements": [
+      {"id": "movable_property", "description": "the property involved is movable property"},
+      {"id": "dishonest_intent", "description": "the taking was done dishonestly, with intent to cause wrongful gain to the accused or wrongful loss to the owner"},
+      {"id": "without_consent", "description": "the property was taken without the owner's consent"},
+      {"id": "taking_out_of_possession", "description": "the property was moved out of the possession of the person it belonged to"}
+    ]
+  },
+
+  "IPC_390": {
+    "title": "Robbery",
+    "elements": [
+      {"id": "theft_or_extortion", "description": "the underlying act is theft or extortion"},
+      {"id": "force_or_threat", "description": "the act was accompanied by force, hurt, or the threat of instant death, instant hurt, or instant wrongful restraint"},
+      {"id": "immediate_context", "description": "the force or threat occurred at the time of, immediately before, or immediately after the taking"}
+    ]
+  },
+  "BNS_287": {
+    "title": "Robbery",
+    "elements": [
+      {"id": "theft_or_extortion", "description": "the underlying act is theft or extortion"},
+      {"id": "force_or_threat", "description": "the act was accompanied by force, hurt, or the threat of instant death, instant hurt, or instant wrongful restraint"},
+      {"id": "immediate_context", "description": "the force or threat occurred at the time of, immediately before, or immediately after the taking"}
+    ]
+  },
+
+  "IPC_420": {
+    "title": "Cheating and dishonestly inducing delivery of property",
+    "elements": [
+      {"id": "deception", "description": "the accused deceived the victim"},
+      {"id": "dishonest_inducement", "description": "the victim was induced to deliver property, or to do or omit an act, because of the deception"},
+      {"id": "wrongful_loss_or_gain", "description": "the deception resulted in wrongful loss to the victim or wrongful gain to the accused"}
+    ]
+  },
+  "BNS_309": {
+    "title": "Cheating",
+    "elements": [
+      {"id": "deception", "description": "the accused deceived the victim"},
+      {"id": "dishonest_inducement", "description": "the victim was induced to deliver property, or to do or omit an act, because of the deception"},
+      {"id": "wrongful_loss_or_gain", "description": "the deception resulted in wrongful loss to the victim or wrongful gain to the accused"}
+    ]
+  },
+
+  "IPC_506": {
+    "title": "Criminal intimidation (punishment)",
+    "elements": [
+      {"id": "threat", "description": "the accused threatened the victim with injury to person, reputation, or property"},
+      {"id": "intent_to_cause_alarm", "description": "the threat was made with intent to cause alarm to the victim, or to compel the victim to do or omit an act"}
+    ]
+  },
+  "BNS_351": {
+    "title": "Criminal intimidation",
+    "elements": [
+      {"id": "threat", "description": "the accused threatened the victim with injury to person, reputation, or property"},
+      {"id": "intent_to_cause_alarm", "description": "the threat was made with intent to cause alarm to the victim, or to compel the victim to do or omit an act"}
+    ]
+  }
+}

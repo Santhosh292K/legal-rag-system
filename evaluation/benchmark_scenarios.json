@@ -1,0 +1,473 @@
+[
+  {
+    "query": "Ramesh is a doctor who got fake degree and practiced medicine, but a patient died under his medication",
+    "gold_sections": [
+      "IPC_304A",
+      "IPC_416",
+      "IPC_419",
+      "IPC_468",
+      "IPC_420"
+    ],
+    "gold_answer": "Causing death by a rash or negligent act not amounting to culpable homicide is punishable with up to 2 years imprisonment, or fine, or both [IPC_304A]. Cheating by personation is an offence [IPC_416], punishable with up to 3 years imprisonment, or fine, or both [IPC_419]. Forgery for the purpose of cheating is punishable with up to 7 years imprisonment and fine [IPC_468]. Cheating that induces the victim to deliver property is punishable with up to 7 years imprisonment and fine [IPC_420].\nBased on: [IPC_304A, IPC_416, IPC_419, IPC_468, IPC_420]",
+    "category": "criminal"
+  },
+  {
+    "query": "A man drove drunk and hit a pedestrian who died. What crime has he committed?",
+    "gold_sections": [
+      "IPC_304A",
+      "IPC_279"
+    ],
+    "gold_answer": "Causing death by a rash or negligent act not amounting to culpable homicide is punishable with up to 2 years imprisonment, or fine, or both [IPC_304A]. Rash or negligent driving endangering human life is punishable with up to 6 months imprisonment, or fine up to Rs.1000, or both [IPC_279].\nBased on: [IPC_304A, IPC_279]",
+    "category": "criminal"
+  },
+  {
+    "query": "A police officer arrested Ravi without any reason and kept him in lockup for 5 days",
+    "gold_sections": [
+      "IPC_343",
+      "IPC_166"
+    ],
+    "gold_answer": "Wrongful confinement for 3 or more days is punishable with up to 2 years imprisonment, or fine, or both [IPC_343]. A public servant who knowingly disobeys a direction of law with intent to cause injury is punishable with up to 1 year imprisonment, or fine, or both [IPC_166].\nBased on: [IPC_343, IPC_166]",
+    "category": "police"
+  },
+  {
+    "query": "A sub-inspector took 50,000 rupees bribe from a suspect to drop the FIR",
+    "gold_sections": [
+      "PCA_013",
+      "PCA_014"
+    ],
+    "gold_answer": "A public servant commits criminal misconduct by dishonestly misappropriating entrusted property, illicitly enriching himself, or possessing assets disproportionate to known income [PCA_013]. Criminal misconduct under Section 13 is punishable with imprisonment of not less than four years, extendable to ten years, and fine [PCA_014].\nBased on: [PCA_013, PCA_014]",
+    "category": "police"
+  },
+  {
+    "query": "A husband beat his wife daily and his parents demanded more dowry",
+    "gold_sections": [
+      "IPC_498A",
+      "IPC_304B"
+    ],
+    "gold_answer": "A husband or his relative subjecting a woman to cruelty — wilful conduct driving her to suicide, serious injury, or harassment for dowry — is punishable with up to 3 years imprisonment and fine [IPC_498A]. Where death is caused by burns, bodily injury, or in suspicious circumstances within 7 years of marriage and preceded by dowry-related cruelty, the punishment is a minimum of 7 years up to life imprisonment [IPC_304B].\nBased on: [IPC_498A, IPC_304B]",
+    "category": "domestic"
+  },
+  {
+    "query": "A teacher sexually abused a 14-year-old student",
+    "gold_sections": [
+      "POCSO_004",
+      "IPC_376C"
+    ],
+    "gold_answer": "Penetrative sexual assault is punishable with imprisonment of not less than 7 years, extendable to life, and fine [POCSO_004]. Sexual intercourse by a person in authority — including an educational institution employee — abusing that position is punishable with 5 to 10 years imprisonment and fine [IPC_376C].\nBased on: [POCSO_004, IPC_376C]",
+    "category": "criminal"
+  },
+  {
+    "query": "A software engineer hacked into a bank system and transferred 10 lakhs to his account",
+    "gold_sections": [
+      "ITA_066",
+      "IPC_420"
+    ],
+    "gold_answer": "Dishonestly or fraudulently doing any act referred to in Section 43 (unauthorised access to a computer system) is punishable with up to 3 years imprisonment, or fine up to five lakh rupees, or both [ITA_066]. Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420].\nBased on: [ITA_066, IPC_420]",
+    "category": "cyber"
+  },
+  {
+    "query": "I signed a contract under threat and now want to cancel it. Can I?",
+    "gold_sections": [
+      "ICA_015",
+      "ICA_019"
+    ],
+    "gold_answer": "Coercion involves committing or threatening an IPC-forbidden act, or unlawfully detaining or threatening to detain property, to compel agreement [ICA_015]. A contract where consent was vitiated by coercion, fraud, or misrepresentation is voidable at the victim's option [ICA_019].\nBased on: [ICA_015, ICA_019]",
+    "category": "civil_contract"
+  },
+  {
+    "query": "My business partner promised to sell me his share of property but now refuses. Can I force him?",
+    "gold_sections": [
+      "SRA_010",
+      "SRA_014"
+    ],
+    "gold_answer": "Specific performance of a contract is enforceable where compensation in money would not afford adequate relief — and for contracts involving immovable property, such inadequacy is presumed [SRA_010]. This does not extend to contracts too dependent on personal qualifications, too detailed for court supervision, or otherwise determinable in nature [SRA_014].\nBased on: [SRA_010, SRA_014]",
+    "category": "civil_property"
+  },
+  {
+    "query": "A landlord cut off water and electricity to force the tenant to vacate",
+    "gold_sections": [
+      "IPC_441",
+      "SRA_006"
+    ],
+    "gold_answer": "Entering or remaining on property in another's possession with intent to intimidate, insult, or annoy constitutes criminal trespass [IPC_441]. A person dispossessed of immovable property without consent, other than by due course of law, may sue to recover possession within six months of dispossession [SRA_006].\nBased on: [IPC_441, SRA_006]",
+    "category": "civil_property"
+  },
+  {
+    "query": "My supplier gave me a cheque for 5 lakhs which bounced. What can I do?",
+    "gold_sections": [],
+    "gold_answer": "No relevant legal sections found for this query. Cheque dishonour is governed by NI Act Section 138, which is not currently indexed in this system.\nBased on: (none)",
+    "category": "ni_act_gap"
+  },
+  {
+    "query": "A gang of six men robbed a jewellery shop at gunpoint and tied up the employees",
+    "gold_sections": [
+      "IPC_391",
+      "IPC_395",
+      "IPC_397"
+    ],
+    "gold_answer": "When five or more persons conjointly commit or attempt robbery, every person present and aiding is said to commit dacoity [IPC_391]. Dacoity is punishable with rigorous imprisonment for life or up to 10 years, and fine [IPC_395]. Where the offender uses a deadly weapon or causes grievous hurt, the minimum punishment for robbery or dacoity is 7 years' rigorous imprisonment [IPC_397].\nBased on: [IPC_391, IPC_395, IPC_397]",
+    "category": "criminal"
+  },
+  {
+    "query": "A man sent obscene images to a woman repeatedly on WhatsApp without her consent",
+    "gold_sections": [
+      "ITA_066A",
+      "IPC_509"
+    ],
+    "gold_answer": "[WARNING: STRUCK DOWN] Sending grossly offensive or menacing information by computer resource or communication device was punishable under this section, but it was struck down as unconstitutional by the Supreme Court in Shreya Singhal v. Union of India (2015) [ITA_066A]. Uttering a word, sound, or gesture intended to insult a woman's modesty or intrude on her privacy is punishable with up to 3 years imprisonment and fine [IPC_509].\nBased on: [ITA_066A, IPC_509]",
+    "category": "cyber"
+  },
+  {
+    "query": "Upper caste landlord refused to allow a Dalit worker entry to the village well",
+    "gold_sections": [
+      "SCST_003"
+    ],
+    "gold_answer": "Denying a Scheduled Caste or Scheduled Tribe member the right of way, or access to a public place or facility, is listed among the acts constituting an atrocity, punishable with a minimum of 6 months and up to 5 years imprisonment [SCST_003].\nBased on: [SCST_003]",
+    "category": "scst"
+  },
+  {
+    "query": "A builder sold the same flat to two different buyers using duplicate sale deeds",
+    "gold_sections": [
+      "IPC_420",
+      "IPC_467",
+      "IPC_468"
+    ],
+    "gold_answer": "Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420]. Forgery of a valuable security or a document purporting to be one is punishable with life imprisonment or up to 10 years and fine [IPC_467]. Forgery for the purpose of cheating is punishable with up to 7 years imprisonment and fine [IPC_468].\nBased on: [IPC_420, IPC_467, IPC_468]",
+    "category": "criminal"
+  },
+  {
+    "query": "An officer of a government department demanded a bribe to pass a contractor's bill",
+    "gold_sections": [
+      "PCA_007",
+      "PCA_013"
+    ],
+    "gold_answer": "A public servant who obtains or attempts to obtain an undue advantage for improperly or dishonestly performing a public duty is punishable with imprisonment of not less than 3 years, up to 7 years, and fine [PCA_007]. Criminal misconduct — dishonest misappropriation of entrusted property or possession of disproportionate assets — is separately punishable [PCA_013].\nBased on: [PCA_007, PCA_013]",
+    "category": "police"
+  },
+  {
+    "query": "What is the punishment for murder under Indian law?",
+    "gold_sections": [
+      "IPC_302",
+      "BNS_103"
+    ],
+    "gold_answer": "Murder is punishable with death or imprisonment for life, and fine [IPC_302]. The equivalent provision under the Bharatiya Nyaya Sanhita, 2023 carries the same punishment, extending to death or life imprisonment where murder is committed by a group of five or more on specified grounds such as race, caste, or community [BNS_103].\nBased on: [IPC_302, BNS_103]",
+    "category": "punitive"
+  },
+  {
+    "query": "A person kidnapped a child and demanded ransom from parents",
+    "gold_sections": [
+      "IPC_363",
+      "IPC_364A"
+    ],
+    "gold_answer": "Kidnapping is punishable with up to 7 years imprisonment and fine [IPC_363]. Kidnapping with a demand for ransom, or a threat of death or hurt, is punishable with death or life imprisonment and fine [IPC_364A].\nBased on: [IPC_363, IPC_364A]",
+    "category": "criminal"
+  },
+  {
+    "query": "An employee stole money from the company cash box over several months",
+    "gold_sections": [
+      "IPC_381",
+      "IPC_408"
+    ],
+    "gold_answer": "Theft by a clerk or servant of property in their employer's possession is punishable with up to 7 years imprisonment and fine [IPC_381]. Criminal breach of trust by a clerk or servant of property entrusted to them in their professional capacity carries the same punishment [IPC_408].\nBased on: [IPC_381, IPC_408]",
+    "category": "criminal"
+  },
+  {
+    "query": "A rickshaw puller was beaten by a local goon who extracted money regularly",
+    "gold_sections": [
+      "IPC_383",
+      "IPC_384",
+      "IPC_386"
+    ],
+    "gold_answer": "Extortion is putting a person in fear of injury to dishonestly induce delivery of property or an act they are not legally bound to do [IPC_383], punishable with up to 3 years imprisonment, or fine, or both [IPC_384]. Where the fear is of death or grievous hurt, extortion is punishable with up to 10 years imprisonment and fine [IPC_386].\nBased on: [IPC_383, IPC_384, IPC_386]",
+    "category": "criminal"
+  },
+  {
+    "query": "Neighbour encroached on my land and built a wall on my plot. What are my legal options?",
+    "gold_sections": [
+      "IPC_447",
+      "TPA_005",
+      "SRA_006"
+    ],
+    "gold_answer": "Criminal trespass on another's property is punishable with up to 3 months imprisonment, or fine up to Rs.500, or both [IPC_447]. A transfer of property is the act by which a living person conveys property, present or future, to another [TPA_005]. A person dispossessed of immovable property without consent, other than by due course of law, may sue to recover possession within six months [SRA_006].\nBased on: [IPC_447, TPA_005, SRA_006]",
+    "category": "civil_property"
+  },
+  {
+    "query": "What is the limitation period for filing a suit to recover money?",
+    "gold_sections": [
+      "LA_003"
+    ],
+    "gold_answer": "Every suit, appeal, or application instituted after the prescribed limitation period must be dismissed by the court, even where limitation is not raised as a defence [LA_003]. (The specific limitation period for money suits, commonly 3 years, is set out in the Act's Schedule, which is not separately indexed in this system.)\nBased on: [LA_003]",
+    "category": "procedural"
+  },
+  {
+    "query": "A factory owner released toxic chemical waste into the river, killing fish and affecting villagers",
+    "gold_sections": [
+      "IPC_277",
+      "IPC_278",
+      "IPC_284"
+    ],
+    "gold_answer": "Voluntarily corrupting or fouling the water of a public spring or reservoir, making it less fit for ordinary use, is punishable with up to 3 months imprisonment, or fine up to Rs.500, or both [IPC_277]. Making the atmosphere of a place noxious to health through pollution is punishable with a fine up to Rs.500 [IPC_278]. Negligent handling of a poisonous substance so as to endanger human life is punishable with up to 6 months imprisonment, or fine up to Rs.1000, or both [IPC_284].\nBased on: [IPC_277, IPC_278, IPC_284]",
+    "category": "criminal"
+  },
+  {
+    "query": "How do I file an anticipatory bail application? Which court do I approach?",
+    "gold_sections": [
+      "CRPC_438"
+    ],
+    "gold_answer": "The Sessions Court or High Court may grant anticipatory bail, directing release on bail in the event of arrest for specified non-bailable offences [CRPC_438]. (This system's indexed BNSS Section 482 covers cancellation of bail, not anticipatory bail, so no correct BNSS equivalent is currently indexed.)\nBased on: [CRPC_438]",
+    "category": "procedural"
+  },
+  {
+    "query": "A man wrote a will leaving all property to his son, but he was of unsound mind when writing it",
+    "gold_sections": [],
+    "gold_answer": "No relevant legal sections found for this query. Testamentary capacity — soundness of mind to execute a will — is governed by the Indian Succession Act, which is not indexed in this system.\nBased on: (none)",
+    "category": "isa_gap"
+  },
+  {
+    "query": "An accused person was denied access to a lawyer during police interrogation",
+    "gold_sections": [
+      "COI_022",
+      "CRPC_41D"
+    ],
+    "gold_answer": "An arrested person has the right to consult and be defended by a legal practitioner, must be informed of the grounds of arrest, and must be produced before a magistrate within 24 hours [COI_022]. Specifically, an arrested person has the right to meet an advocate of their choice during interrogation, though not throughout it [CRPC_41D].\nBased on: [COI_022, CRPC_41D]",
+    "category": "constitutional"
+  },
+  {
+    "query": "A private company is storing Aadhaar-linked data without consent. Is this an offence?",
+    "gold_sections": [
+      "ITA_043A",
+      "ITA_072A"
+    ],
+    "gold_answer": "A body corporate handling sensitive personal data that is negligent in implementing reasonable security practices, resulting in wrongful loss or gain, is liable to pay compensation [ITA_043A]. Disclosing personal information secured under a lawful contract without the person's consent, with intent or knowledge of likely wrongful loss or gain, is punishable with up to 3 years imprisonment, or fine up to five lakh rupees, or both [ITA_072A].\nBased on: [ITA_043A, ITA_072A]",
+    "category": "cyber"
+  },
+  {
+    "query": "A man used the name and signature of a deceased person to sell ancestral property",
+    "gold_sections": [
+      "IPC_463",
+      "IPC_467",
+      "IPC_420"
+    ],
+    "gold_answer": "Forgery is making a false document with intent to cause damage or injury, to support a claim or title, or to cause a person to part with property [IPC_463]. Forgery of a document purporting to be a valuable security is punishable with life imprisonment or up to 10 years and fine [IPC_467]. Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420].\nBased on: [IPC_463, IPC_467, IPC_420]",
+    "category": "criminal"
+  },
+  {
+    "query": "My employer has not paid salary for three months. What can I do legally?",
+    "gold_sections": [
+      "ICA_037",
+      "IPC_403"
+    ],
+    "gold_answer": "Parties to a contract must perform, or offer to perform, their promises unless excused by law [ICA_037]. Dishonestly misappropriating or converting movable property — such as diverted salary funds — to one's own use is separately punishable with up to 2 years imprisonment, or fine, or both [IPC_403].\nBased on: [ICA_037, IPC_403]",
+    "category": "civil_contract"
+  },
+  {
+    "query": "What is culpable homicide not amounting to murder and how does it differ from murder?",
+    "gold_sections": [
+      "IPC_299",
+      "IPC_300",
+      "IPC_304"
+    ],
+    "gold_answer": "Culpable homicide is causing death with the intention of causing death, or such bodily injury as is likely to cause death, or with knowledge that the act is likely to cause death [IPC_299]. It amounts to murder where the intention was to cause death or bodily injury sufficient to cause death in the ordinary course of nature, or with knowledge that death would almost certainly result, subject to exceptions such as grave and sudden provocation [IPC_300]. Where it does not amount to murder, the punishment is up to life imprisonment if done with intention to cause death or grievous hurt, or up to 10 years and fine if done only with knowledge [IPC_304].\nBased on: [IPC_299, IPC_300, IPC_304]",
+    "category": "definition"
+  },
+  {
+    "query": "A school published the home address of a minor abuse survivor in their annual report",
+    "gold_sections": [
+      "POCSO_040"
+    ],
+    "gold_answer": "No person may make a report or present commentary in any media that discloses the identity of a child victim in relation to an offence under this Act [POCSO_040].\nBased on: [POCSO_040]",
+    "category": "pocso"
+  },
+  {
+    "query": "A person was held in custody for 90 days without being produced before a magistrate",
+    "gold_sections": [
+      "CRPC_167",
+      "COI_022"
+    ],
+    "gold_answer": "Where investigation cannot be completed within 24 hours, the accused must be produced before a magistrate; the magistrate may grant custody up to 60 or 90 days depending on the offence, after which the accused is entitled to bail if no chargesheet has been filed [CRPC_167]. Every arrested person must be informed of the grounds of arrest and produced before a magistrate within 24 hours [COI_022].\nBased on: [CRPC_167, COI_022]",
+    "category": "constitutional"
+  },
+  {
+    "query": "A buyer paid full price for a flat but the developer disappeared without handing over possession",
+    "gold_sections": [
+      "IPC_420",
+      "SRA_010"
+    ],
+    "gold_answer": "Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420]. Specific performance of a contract for immovable property is enforceable where compensation in money would not afford adequate relief, which is presumed for contracts of immovable property [SRA_010].\nBased on: [IPC_420, SRA_010]",
+    "category": "civil_property"
+  },
+  {
+    "query": "An SHO registered a false FIR against an innocent person at the behest of a politician",
+    "gold_sections": [
+      "IPC_211",
+      "IPC_166"
+    ],
+    "gold_answer": "Instituting criminal proceedings against a person knowing there is no just or lawful ground is punishable with up to 2 years, or up to 7 years where the false charge concerns a capital offence [IPC_211]. A public servant who knowingly disobeys a direction of law with intent to cause injury is punishable with up to 1 year imprisonment, or fine, or both [IPC_166].\nBased on: [IPC_211, IPC_166]",
+    "category": "police"
+  },
+  {
+    "query": "A man attacked his neighbour with acid causing disfigurement",
+    "gold_sections": [
+      "IPC_326A",
+      "IPC_326B"
+    ],
+    "gold_answer": "Voluntarily causing grievous hurt by use of acid, causing permanent or partial damage, deformity, or disfigurement, is punishable with a minimum of 10 years up to life imprisonment and fine [IPC_326A]. Voluntarily throwing or attempting to throw acid on a person is punishable with a minimum of 5 years up to 7 years imprisonment and fine [IPC_326B].\nBased on: [IPC_326A, IPC_326B]",
+    "category": "criminal"
+  },
+  {
+    "query": "What documents are considered as primary evidence under Indian evidence law?",
+    "gold_sections": [
+      "IEA_062",
+      "IEA_064"
+    ],
+    "gold_answer": "Primary evidence is the document itself, produced for the court's inspection; counterparts and multiple originals are each primary evidence against the parties who signed them [IEA_062]. Documents must be proved by primary evidence except in the circumstances mentioned in Section 65 [IEA_064].\nBased on: [IEA_062, IEA_064]",
+    "category": "definition"
+  },
+  {
+    "query": "A 16-year-old boy was caught with 500 grams of cannabis. What is the punishment?",
+    "gold_sections": [
+      "NDPS_020",
+      "NDPS_027"
+    ],
+    "gold_answer": "Possession of a small quantity of cannabis is punishable with up to 1 year imprisonment; possession of a commercial quantity carries rigorous imprisonment of 10 to 20 years and a fine of not less than one lakh rupees [NDPS_020]. Consumption of a narcotic drug is separately punishable with up to 1 year rigorous imprisonment, or fine, or both [NDPS_027].\nBased on: [NDPS_020, NDPS_027]",
+    "category": "criminal"
+  },
+  {
+    "query": "A political leader made a speech calling for violence against a minority community",
+    "gold_sections": [
+      "IPC_153A",
+      "IPC_505",
+      "UAPA_013"
+    ],
+    "gold_answer": "Promoting enmity, hatred, or ill-will between groups on grounds of religion, race, caste, or community is punishable with up to 3 years imprisonment or fine [IPC_153A]. Making or circulating a statement likely to incite public fear or promote enmity between classes is punishable with up to 3 years imprisonment, or fine, or both [IPC_505]. Taking part in, advocating, or inciting an unlawful activity is punishable with up to 7 years imprisonment and fine, extending to life imprisonment where it involves attacking India's sovereignty [UAPA_013].\nBased on: [IPC_153A, IPC_505, UAPA_013]",
+    "category": "criminal"
+  },
+  {
+    "query": "A person forged their caste certificate to get government reservation benefits",
+    "gold_sections": [
+      "IPC_468",
+      "IPC_471",
+      "IPC_420"
+    ],
+    "gold_answer": "Forgery for the purpose of cheating is punishable with up to 7 years imprisonment and fine [IPC_468]. Using as genuine a document known to be forged is punishable in the same way as the forgery itself [IPC_471]. Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420].\nBased on: [IPC_468, IPC_471, IPC_420]",
+    "category": "criminal"
+  },
+  {
+    "query": "A girl was forced into marriage at 17 years of age. Is this legal?",
+    "gold_sections": [
+      "IPC_366",
+      "POCSO_003"
+    ],
+    "gold_answer": "Kidnapping, abducting, or inducing a woman to compel her marriage is punishable with up to 10 years imprisonment and fine [IPC_366]. If the marriage is consummated, penetrative sexual assault — penetration or insertion of an object or body part into the vagina, urethra, anus, or mouth of a child — is separately punishable [POCSO_003]. (The marriage itself is regulated by the Prohibition of Child Marriage Act, which is not indexed in this system.)\nBased on: [IPC_366, POCSO_003]",
+    "category": "domestic"
+  },
+  {
+    "query": "A software developer uploaded a pirated movie on a server and charged users for access",
+    "gold_sections": [
+      "ITA_066",
+      "ITA_043"
+    ],
+    "gold_answer": "Accessing, downloading, copying, or extracting data from a computer system without the owner's permission renders a person liable to pay damages by way of compensation not exceeding one crore rupees [ITA_043]. Doing so dishonestly or fraudulently is separately punishable with up to 3 years imprisonment, or fine up to five lakh rupees, or both [ITA_066].\nBased on: [ITA_043, ITA_066]",
+    "category": "cyber"
+  },
+  {
+    "query": "A landlord wants to evict a tenant who has been living for 15 years and has no written agreement",
+    "gold_sections": [
+      "TPA_106",
+      "SRA_006"
+    ],
+    "gold_answer": "A lease of immovable property for any purpose other than agriculture or manufacturing is, absent a contract to the contrary, deemed a lease from month to month, terminable by 15 days' notice [TPA_106]. A person dispossessed of immovable property without consent, other than by due course of law, may sue to recover possession within six months [SRA_006].\nBased on: [TPA_106, SRA_006]",
+    "category": "civil_property"
+  },
+  {
+    "query": "A soldier tortured a civilian in a conflict area. Is the army officer protected from prosecution?",
+    "gold_sections": [
+      "COI_020",
+      "COI_021"
+    ],
+    "gold_answer": "No person may be convicted except for violation of a law in force at the time, prosecuted twice for the same offence, or compelled to be a witness against himself [COI_020]. No person may be deprived of life or personal liberty except by procedure established by law — a right interpreted broadly to include privacy, livelihood, and dignity [COI_021].\nBased on: [COI_020, COI_021]",
+    "category": "constitutional"
+  },
+  {
+    "query": "A middleman charged 40% commission to process a government subsidy for a farmer",
+    "gold_sections": [
+      "PCA_008",
+      "IPC_420"
+    ],
+    "gold_answer": "A person who gives a bribe is treated not as an abettor but as a compellable witness against the public servant, provided the matter is reported to law enforcement within seven days to claim immunity [PCA_008]. Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420].\nBased on: [PCA_008, IPC_420]",
+    "category": "police"
+  },
+  {
+    "query": "My relative transferred property to me as a gift. What formalities are required for it to be valid?",
+    "gold_sections": [
+      "TPA_122",
+      "TPA_123"
+    ],
+    "gold_answer": "A gift is the voluntary transfer of existing property without consideration, from a donor to a donee who accepts it [TPA_122]. For a gift of immovable property, the transfer must be effected by a registered instrument signed by the donor and attested by at least two witnesses [TPA_123].\nBased on: [TPA_122, TPA_123]",
+    "category": "civil_property"
+  },
+  {
+    "query": "A tribal farmer's land was forcibly acquired by a private mining company with support from local officials",
+    "gold_sections": [
+      "SCST_003",
+      "IPC_447",
+      "COI_300A"
+    ],
+    "gold_answer": "Forcibly dispossessing a Scheduled Caste or Scheduled Tribe member of land is listed among the acts constituting an atrocity, punishable with a minimum of 6 months and up to 5 years imprisonment [SCST_003]. Criminal trespass on the property is separately punishable with up to 3 months imprisonment, or fine up to Rs.500, or both [IPC_447]. No person may be deprived of property save by authority of law [COI_300A].\nBased on: [SCST_003, IPC_447, COI_300A]",
+    "category": "scst"
+  },
+  {
+    "query": "A government contractor inflated bills and submitted them for payment — defrauding Rs 2 crores",
+    "gold_sections": [
+      "IPC_420",
+      "PCA_013"
+    ],
+    "gold_answer": "Cheating that induces delivery of property is punishable with up to 7 years imprisonment and fine [IPC_420]. Criminal misconduct by a public servant — dishonest misappropriation of entrusted property or illicit enrichment — is separately punishable [PCA_013].\nBased on: [IPC_420, PCA_013]",
+    "category": "police"
+  },
+  {
+    "query": "An employee was terminated without notice after reporting corruption by his manager to authorities",
+    "gold_sections": [
+      "PCA_019"
+    ],
+    "gold_answer": "No court may take cognizance of an offence punishable under Sections 7 to 15 committed by a public servant without the previous sanction of the authority competent to remove that public servant from office [PCA_019].\nBased on: [PCA_019]",
+    "category": "police"
+  },
+  {
+    "query": "A person was detained without trial under a special security act for 18 months",
+    "gold_sections": [
+      "COI_022"
+    ],
+    "gold_answer": "Every arrested person must be informed of the grounds of arrest, has the right to consult and be defended by a legal practitioner, and must be produced before a magistrate within 24 hours; preventive detention may not exceed three months without Advisory Board review [COI_022].\nBased on: [COI_022]",
+    "category": "constitutional"
+  },
+  {
+    "query": "Two companies formed a cartel and fixed prices for essential medicines. Is this legal?",
+    "gold_sections": [
+      "ICA_023",
+      "ICA_027"
+    ],
+    "gold_answer": "Every agreement restraining a person from exercising a lawful profession, trade, or business is void to that extent, except for a reasonable non-compete tied to the sale of goodwill [ICA_027]. More generally, an agreement is unlawful — and therefore void — where its object defeats legal provisions, or is fraudulent, injurious, or against public policy [ICA_023].\nBased on: [ICA_027, ICA_023]",
+    "category": "civil_contract"
+  },
+  {
+    "query": "Can a will be challenged in court by a brother who was excluded from inheritance?",
+    "gold_sections": [
+      "IEA_068"
+    ],
+    "gold_answer": "A document required by law to be attested may not be used as evidence until at least one attesting witness has been called to prove its execution [IEA_068].\nBased on: [IEA_068]",
+    "category": "civil_contract"
+  },
+  {
+    "query": "What are the actions taken against child labour?",
+    "gold_sections": [
+      "COI_024",
+      "IPC_370A",
+      "BNS_144",
+      "BNS_143"
+    ],
+    "gold_answer": "No child below the age of fourteen years shall be employed to work in any factory or mine or engaged in any other hazardous employment [COI_024]. Engaging or employing a trafficked person is punishable with 3 to 5 years imprisonment and fine, rising to 5 to 7 years if the victim is a child [IPC_370A]. Exploiting a trafficked person is punishable with rigorous imprisonment of three to seven years and fine [BNS_144]. Recruiting, transporting, harbouring, or receiving a person by threat, force, or deception for exploitation is punishable with rigorous imprisonment of seven to ten years and fine, with enhanced punishment where the victim is a child [BNS_143]. Note: the Child Labour (Prohibition and Regulation) Act, 1986 and the Factories Act, 1948 — the primary statutes governing child employment specifically — are not indexed in this dataset; the sections above are the closest available provisions.\nBased on: [COI_024, IPC_370A, BNS_144, BNS_143]",
+    "category": "child_labour",
+    "notes": "Regression case for the child-labour retrieval gap."
+  }
+]
