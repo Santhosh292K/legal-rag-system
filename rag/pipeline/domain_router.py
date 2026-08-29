@@ -332,6 +332,13 @@ class RoutingResult:
     # how a correct domain (e.g. "criminal") silently loses a correct but
     # less-common act (e.g. SCST) to a more common one (e.g. IPC).
     primary_act_has_direct_evidence: bool = False
+    # False when the query shows no real signal of being about Indian law
+    # at all — see route()'s "plausibly-legal gate" for exactly what that
+    # means. Callers should treat False as a reason to reject the query
+    # before paying for translation/retrieval/generation, not as a reason
+    # to search less broadly (that's what the "activate everything"
+    # fallback below is already for, when this is True but ambiguous).
+    plausibly_legal: bool = True
 
 
 # Query TYPE detection is structural/syntactic ("what does section X say"),
@@ -373,7 +380,12 @@ QUERY_TYPE_PATTERNS = {
 
 # Small, closed set — not the scaling target of this refactor, left as-is.
 MISSING_ACT_SIGNALS = {
-    "NI":   [r"\b(cheque\s+bounce|dishonour\w*\s+cheque|ni\s+act|section\s+138)\b"],
+    # BUGFIX: "cheque\s+bounce" only matched the bare base form — a real
+    # query almost always inflects it ("bounced", "bouncing"), which this
+    # missed entirely (\b requires a word boundary right after "bounce",
+    # but "bounced" has no boundary between "bounce" and "d"). \w* fixes it
+    # the same way "dishonour\w*" already handles its own inflections.
+    "NI":   [r"\b(cheque\s+bounce\w*|dishonour\w*\s+cheque|ni\s+act|section\s+138)\b"],
     "MCA":  [r"\b(company\s+law|mca|companies\s+act|director\s+(fraud|liability))\b"],
     "IT":   [r"\b(income\s+tax|tds|tax\s+evad\w*|it\s+department)\b"],
     "GST":  [r"\b(gst|goods\s+and\s+services\s+tax|input\s+tax\s+credit)\b"],
@@ -390,6 +402,18 @@ MISSING_ACT_SIGNALS = {
               r"\b(child|children|minor|underage)\b.{0,40}"
               r"\b(work|job|labou?r|factory|mine|hazardous)\b",
               r"\bworking\s+children\b|\bchild\s+worker\b"],
+    # BUGFIX: MISSING_ACTS has had an "FA" entry (Factories Act, 1948) since
+    # CLPRA was added, but no corresponding signal here — detect_missing_acts()
+    # only iterates this dict's keys, so "FA" could never fire and the
+    # Factories Act warning was structurally dead code, unlike every other
+    # entry in MISSING_ACTS. Distinct from CLPRA: covers adult/general working
+    # conditions and workplace safety, not specifically child labour (that
+    # stays on CLPRA's patterns above, which fire independently and can both
+    # match the same query — e.g. "child forced to work in a factory").
+    "FA":    [r"\bfactories\s+act\b",
+              r"\b(working\s+conditions?|workplace\s+safety|industrial\s+safety)\b",
+              r"\b(hazardous\s+process|occupational\s+(health|hazard|injury)|workplace\s+injury)\b",
+              r"\b(factory\s+(worker|inspector|licen[cs]e)|working\s+hours\s+in\s+a\s+factory)\b"],
 }
 
 
@@ -460,16 +484,50 @@ class DomainRouter:
         query_type = detect_query_type(query)
         missing = detect_missing_acts(query)
 
+        # Regex signal across all 6 domains' ~100+ hand-written patterns
+        # (murder/theft/contract/property/constitution/cyber/family — see
+        # DOMAINS above) is cheap regardless of embed_fn, and doubles below
+        # as the keyword safety net for the plausibly-legal gate: a query
+        # that hits ANY of these is unambiguously legal-flavored even if it
+        # scores oddly against the (much smaller) curated example set.
+        regex_scores = self._score_domains_regex(q_lower)
+
         # ── Domain scoring: embedding-first, regex fallback ────────────────
         if self.embed_fn:
-            domain_scores = self._score_domains_semantic(query)
+            semantic_scores = self._score_domains_semantic(query)
+            max_semantic = max(semantic_scores.values()) if semantic_scores else 0.0
             # Only keep domains with a plausible match — a low top score
             # across the board means the query doesn't clearly belong
             # anywhere, which is exactly the "activate everything" case.
             SEMANTIC_FLOOR = 0.35
-            domain_scores = {k: v for k, v in domain_scores.items() if v >= SEMANTIC_FLOOR}
+            domain_scores = {k: v for k, v in semantic_scores.items() if v >= SEMANTIC_FLOOR}
         else:
-            domain_scores = self._score_domains_regex(q_lower)
+            domain_scores = regex_scores
+            max_semantic = 0.0
+
+        # ── Plausibly-legal gate ─────────────────────────────────────────
+        # Runs the ENTIRE rest of the pipeline (translation, retrieval,
+        # IRAC reranking, a final 14B-model generation call — 5+ sequential
+        # LLM round-trips) for a query with literally zero legal signal
+        # ("what's my name", small talk, an unrelated topic) both wastes
+        # that latency and forces the answer generator to confabulate
+        # something from whatever tangentially-scored sections it's handed,
+        # since it has no real "this isn't a legal question at all" escape
+        # hatch today. Reject here instead, before any of that runs.
+        #
+        # Deliberately conservative — three independent ways a query counts
+        # as legal, ANY one is enough, so this only fires on a query with
+        # NONE of: (a) a regex hit against the broad domain pattern set,
+        # (b) a hit against MISSING_ACT_SIGNALS (still legal, just an act
+        # this dataset doesn't have — that deserves the existing "not
+        # indexed" messaging, not a blanket rejection), (c) semantic
+        # similarity to ANY domain's curated examples clearing a bar well
+        # below SEMANTIC_FLOOR (0.20 vs 0.35 — a real but modest similarity,
+        # not "confidently in this domain").
+        REJECT_SEMANTIC_FLOOR = 0.20
+        plausibly_legal = bool(regex_scores) or bool(missing) or (
+            self.embed_fn is not None and max_semantic >= REJECT_SEMANTIC_FLOOR
+        )
 
         if not domain_scores:
             activated_names = [d.name for d in DOMAINS]
@@ -537,6 +595,7 @@ class DomainRouter:
             missing_acts = missing,
             query_type   = query_type,
             primary_act_has_direct_evidence = direct_evidence,
+            plausibly_legal = plausibly_legal,
         )
 
 

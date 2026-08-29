@@ -28,6 +28,12 @@ class Citation:
     warning:    str
 
 
+# Shared between _assess_confidence's "medium" band and generate()'s prompt
+# selection, so both agree on what "weak retrieval" means rather than two
+# independently-tuned magic numbers drifting apart over time.
+LOW_RELEVANCE_THRESHOLD = 0.40
+
+
 @dataclass
 class LegalAnswer:
     query:        str
@@ -62,6 +68,49 @@ Retrieved Legal Sections:
 {context}
 
 Answer directly and factually using the section content above:"""
+
+
+# Used instead of ANSWER_PROMPT when either (a) an upstream stage already
+# knows a specific act central to this query isn't in the database at all
+# (domain_router's regex signals / universal_translator's LLM-flagged
+# gaps — see main.py's `all_gaps`), or (b) retrieval quality itself is
+# weak (LOW_RELEVANCE_THRESHOLD). ANSWER_PROMPT's "trust it completely /
+# never express uncertainty" rules are right when retrieval actually
+# found the answer, but applied unconditionally they forced the model to
+# confidently answer e.g. "the punishment for child labour is X" using
+# only tangentially-related sections (child kidnapping/trafficking, not
+# child *employment* law) — correct-sounding, wrong. This variant is
+# explicitly allowed, and instructed, to say so instead of stretching a
+# weak match to fit.
+ANSWER_PROMPT_CAUTIOUS = """You are a precise legal assistant specializing in Indian law.
+You will be given legal sections retrieved from a database, for a query where either
+retrieval confidence is LOW or a law the query is really about is KNOWN to be missing
+from this database entirely (see KNOWN GAPS below).
+
+CRITICAL RULES:
+- If KNOWN GAPS names an act that is what this query is actually asking about, say so
+  plainly as your FIRST sentence — e.g. "This database does not include the {{act}},
+  so it cannot answer this directly." Lead with it; don't bury it after a long answer.
+- Only after that: if the Retrieved Legal Sections below are genuinely related (e.g.
+  cover related conduct from a different angle), present them as RELATED provisions —
+  not as the direct answer. Do not phrase content from a section about a different
+  offence as if it were "the punishment for X" when the query asked about X specifically.
+- Still cite every claim you do make with [SECTION_ID], and never invent a section or
+  content not present below.
+- If none of the retrieved sections are meaningfully related to the query, say plainly
+  that no relevant provision was found in this database, instead of stretching one to fit.
+- End with: "Based on: [list all cited section IDs]" (omit this line if you cited none).
+
+Query: {query}
+Query type: {intent}
+
+KNOWN GAPS (acts relevant to this query that this database does not contain):
+{gap_notice}
+
+Retrieved Legal Sections:
+{context}
+
+Answer, being explicit about what this database does and doesn't cover:"""
 
 
 FUSED_ANSWER_PROMPT = """You are a precise legal assistant specializing in Indian law.
@@ -182,7 +231,7 @@ class AnswerGenerator:
             )
         return "\n---\n".join(parts)
 
-    def _normalize_citations(self, answer_text: str) -> str:
+    def _normalize_citations(self, answer_text: str, known_ids: frozenset[str] = frozenset()) -> str:
         """Gap 19: normalize alternate citation styles to [ACT_NNN] bracket form
         before extraction so they're not silently lost.
 
@@ -192,6 +241,10 @@ class AnswerGenerator:
           - IPC Section 302 / under Section 302 of IPC
           - Section 66B of IT Act
         All are converted to [IPC_302] / [ITA_066B] canonical form.
+
+        known_ids: the real section_ids actually in play for this answer
+        (ranked's chunk.section_id set) — see _fmt_sec for why this matters
+        beyond just the usual zero-pad guess.
         """
         import re as _re
         ACT_ALIAS = {
@@ -209,9 +262,32 @@ class AnswerGenerator:
             return ACT_ALIAS.get(name.lower().strip(), name.upper().strip())
 
         def _fmt_sec(sec: str, act: str) -> str:
-            sec_clean = sec.strip().lstrip("0") or "0"
-            if sec_clean.isdigit():
-                sec_clean = sec_clean.zfill(3)
+            # BUGFIX: this left a lettered section (e.g. "29a" from "Section
+            # 29a IPC") lowercase and unpadded — sec_clean.isdigit() is False
+            # whenever a letter is present, so the zfill branch never ran for
+            # exactly the sections that need it most. The real indexed IDs
+            # (final_dataset.json) are uppercase with the numeric part
+            # zero-padded to 3 digits BEFORE the letter suffix — "IPC_029A",
+            # not "IPC_29a" or "IPC_29A". _extract_citations matches this
+            # normalized bracket form against chunk.section_id verbatim, so a
+            # mismatch here silently dropped an otherwise-correct citation
+            # the model wrote in prose form instead of bracket form.
+            sec_clean = (sec.strip().lstrip("0") or "0").upper()
+            m = _re.match(r'^(\d+)([A-Z]?)$', sec_clean)
+            if m:
+                digits, letter = m.groups()
+                padded, raw = f"{digits.zfill(3)}{letter}", f"{digits}{letter}"
+                # Every act zero-pads to 3 digits in section_id EXCEPT CRPC,
+                # whose section_ids are a genuine mix of 1/2/3-digit widths
+                # (confirmed against final_dataset.json — unpadded, as
+                # authored). Rather than hardcode that one exception, prefer
+                # whichever candidate is an ACTUAL section_id among this
+                # answer's retrieved chunks; only guess (zero-padded) when
+                # neither is known, same as before this fix.
+                if f"{act}_{raw}" in known_ids:
+                    sec_clean = raw
+                else:
+                    sec_clean = padded
             return f"[{act}_{sec_clean}]"
 
         # Pattern: (Section 302 IPC) or (Sec 302 IPC)
@@ -235,12 +311,12 @@ class AnswerGenerator:
         return text
 
     def _extract_citations(self, answer_text: str, ranked: list[RankedChunk]) -> list[Citation]:
+        chunk_map = {rc.chunk.section_id: rc.chunk for rc in ranked}
         # Gap 19: normalize alternate citation formats first, then extract
-        normalized_text = self._normalize_citations(answer_text)
+        normalized_text = self._normalize_citations(answer_text, known_ids=frozenset(chunk_map))
         # Matches any section ID of the form: LETTERS_ALPHANUMERIC(_ALPHANUMERIC)*
         # e.g. IPC_302, IPC_302A, CPC_1_A, ITA_66B, COI_21_1
         cited_ids = set(re.findall(r"\[([A-Z]+(?:_[A-Z0-9]+)+)\]", normalized_text))
-        chunk_map = {rc.chunk.section_id: rc.chunk for rc in ranked}
         citations = []
         for sid in cited_ids:
             if sid in chunk_map:
@@ -307,7 +383,7 @@ class AnswerGenerator:
 
         if retrieval_ok and citation_ok:
             return "high"
-        elif avg >= 0.40 or recall >= 0.25:
+        elif avg >= LOW_RELEVANCE_THRESHOLD or recall >= 0.25:
             return "medium"
         return "low"
 
@@ -324,10 +400,17 @@ class AnswerGenerator:
 
     def generate(
         self,
-        query:  str,
-        intent: QueryIntent,
-        ranked: list[RankedChunk],
-        top_k:  int = FINAL_TOP_K,
+        query:      str,
+        intent:     QueryIntent,
+        ranked:     list[RankedChunk],
+        top_k:      int = FINAL_TOP_K,
+        # Acts main.py's domain_router/universal_translator stages already
+        # determined are relevant to this query but absent from the
+        # database (main.py's `all_gaps`) — not re-detected here, just
+        # threaded through so the answer itself can be honest about them
+        # instead of the LLM writing as if the retrieved sections are a
+        # direct answer to a law it was never given.
+        known_gaps: list[str] | None = None,
     ) -> LegalAnswer:
 
         if not ranked:
@@ -338,14 +421,26 @@ class AnswerGenerator:
                 confidence = "low",
             )
 
+        top             = self._select_top(ranked, top_k)
+        avg_score       = sum(r.final_score for r in top) / len(top) if top else 0.0
+        weak_retrieval  = avg_score < LOW_RELEVANCE_THRESHOLD
+        use_cautious    = bool(known_gaps) or weak_retrieval
+
         context  = self._build_context(ranked, top_k)
+        if use_cautious:
+            prompt = ANSWER_PROMPT_CAUTIOUS.format(
+                query      = query,
+                intent     = intent.label,
+                gap_notice = "; ".join(known_gaps) if known_gaps
+                             else "(none specifically flagged — retrieval confidence was simply low)",
+                context    = context,
+            )
+        else:
+            prompt = ANSWER_PROMPT.format(query=query, intent=intent.label, context=context)
+
         response = ollama.chat(
             model    = OLLAMA_ANSWER_MODEL,
-            messages = [{"role": "user", "content": ANSWER_PROMPT.format(
-                query   = query,
-                intent  = intent.label,
-                context = context,
-            )}],
+            messages = [{"role": "user", "content": prompt}],
         )
         answer_text = response["message"]["content"].strip()
 
@@ -353,6 +448,12 @@ class AnswerGenerator:
         warnings   = [c.warning for c in citations if c.warning]
         # Gap 18: pass citations to confidence assessor so recall gate fires
         confidence = self._assess_confidence(ranked, top_k, citations=citations)
+        # A query about a KNOWN missing act, answered from weakly-related
+        # sections, shouldn't read as "medium" just because the model
+        # dutifully cited every section it was handed — those citations
+        # being present doesn't mean they were the right ones.
+        if known_gaps and weak_retrieval:
+            confidence = "low"
         irac_sum   = self._build_irac_summary(ranked, top_k)
         # Gap 23: capture the actual reranker top-K section IDs (not just
         # what the LLM cited) so the evaluator can measure true retrieval recall.

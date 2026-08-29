@@ -166,6 +166,23 @@ class CaseIndexer:
                 "doc_type": r.payload["doc_type"],
                 "chunk_role": r.payload["chunk_role"],
                 "document_id": r.payload["document_id"],
+                # BUGFIX: this dict was missing "metadata" — present in
+                # get_all_chunks()'s result shape below but not here, even
+                # though index_chunks() stores it in every point's payload
+                # (chunk.metadata) regardless of which method later reads it
+                # back. pipeline/fusion.py's _sections_from_case_chunks and
+                # _facts_from_case_chunks both read chunk["metadata"]["entities"]
+                # to pull Phase 1's extracted sections_cited/weapons/injuries/etc.
+                # — since search() is what answers every normal (non-broad)
+                # case question, and get_all_chunks() only runs for
+                # "summarize this case"-style broad queries, this silently
+                # starved ALEA evidence-coverage scoring of any facts
+                # (entities_to_facts got {} every time, so
+                # self.alea.score_sections was called with facts=[] and
+                # returned [] immediately) for the common query pattern —
+                # Phase 3/4 evidence-to-law scoring effectively never
+                # produced a result outside the broad-query path.
+                "metadata": r.payload.get("metadata", {}),
             }
             for r in results
         ]

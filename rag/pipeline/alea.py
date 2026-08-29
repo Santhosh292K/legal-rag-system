@@ -164,6 +164,20 @@ class ALEA:
 
         fact_texts  = [f.text for f in evidence_facts]
         fact_vecs   = np.array(self.embed_fn(fact_texts))
+        # BUGFIX: c(ri) is documented (module docstring) as
+        # max_e[w(e) * sim(ri,e)] — the fact that maximizes the WEIGHTED
+        # product, not the fact with the highest raw similarity. The
+        # argmax below used to run on `sims` alone, picking the most
+        # similar fact FIRST and only multiplying by ITS weight afterward
+        # — a different, lower-quality computation whenever a slightly
+        # less-similar but more reliable fact (e.g. a forensic report,
+        # weight 0.9) should have outscored a highly-similar but
+        # low-reliability one (e.g. a witness statement, weight 0.3): the
+        # old code always picked the witness statement in that case,
+        # understating confidence by ~3x in a concrete worked example.
+        # Weighting fact_vecs' similarity row by fact weight before the
+        # argmax fixes this directly.
+        fact_weights = np.array([f.weight for f in evidence_facts])
 
         results = []
         for section_id in candidate_ids:
@@ -174,19 +188,30 @@ class ALEA:
             elem_vecs  = np.array(self.embed_fn(elem_texts))
 
             sim_matrix = _cosine_sim_matrix(elem_vecs, fact_vecs)   # [n_elements x n_facts]
+            weighted_matrix = sim_matrix * fact_weights[np.newaxis, :]  # w(e) * sim(ri,e)
 
             matches = []
             for i, elem in enumerate(elements):
                 sims = sim_matrix[i]
-                best_idx = int(np.argmax(sims))
-                best_sim = float(sims[best_idx])
-
-                if best_sim < SIM_THRESHOLD:
+                # Restrict the weighted argmax to facts that clear
+                # SIM_THRESHOLD on their own similarity first. Without this,
+                # a low-similarity-but-high-weight fact could still win the
+                # weighted argmax (weight can outweigh a sim gap) and then
+                # fail ITS OWN threshold check below — masking a different,
+                # lower-weight fact that genuinely was similar enough and
+                # would otherwise have produced a valid (if smaller)
+                # confidence instead of a hard zero.
+                above_threshold = np.where(sims >= SIM_THRESHOLD)[0]
+                if len(above_threshold) == 0:
+                    best_idx = int(np.argmax(sims))   # for reporting best_sim only
                     matches.append(ElementMatch(
                         element_id=elem["id"], element_description=elem["description"],
-                        confidence=0.0, best_evidence=None, best_sim=best_sim,
+                        confidence=0.0, best_evidence=None, best_sim=float(sims[best_idx]),
                     ))
                     continue
+
+                best_idx = int(above_threshold[np.argmax(weighted_matrix[i][above_threshold])])
+                best_sim = float(sims[best_idx])
 
                 best_fact = evidence_facts[best_idx]
                 confidence = best_fact.weight * best_sim   # c(ri) = max[w(e) x sim(ri,e)]

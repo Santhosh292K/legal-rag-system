@@ -191,6 +191,30 @@ class LegalRAGPipeline:
         for m in routing.missing_acts:
             self._log(f"  ⚠ NOT IN DATASET: {m}")
 
+        # ── Plausibly-legal gate — reject before any expensive work ──────────
+        # A query with no legal signal at all ("what's my name", small talk,
+        # an unrelated topic) used to run the ENTIRE rest of this pipeline —
+        # translation, retrieval, IRAC reranking, a final 14B-model
+        # generation call, 5+ sequential LLM round-trips — before producing
+        # some confabulated answer stitched from whatever tangentially-
+        # scored sections it got handed. routing.plausibly_legal is a
+        # conservative, three-way-gated check (see domain_router.py's
+        # route()) computed from work Stage 0a already did, so this check
+        # itself costs nothing extra — reject here, before Stage 0b onward.
+        if not routing.plausibly_legal:
+            self._log("  Not plausibly a legal question — rejecting before translation/retrieval/generation.")
+            return LegalAnswer(
+                query=user_query,
+                answer=(
+                    "This doesn't look like a question about Indian law — I can only "
+                    "answer questions about Indian statutes. Try rephrasing it as a "
+                    "legal question (e.g. naming an offence, a section number, or a "
+                    "legal situation)."
+                ),
+                intent="",
+                confidence="low",
+            )
+
         # ── Stage 0b: Universal translation ──────────────────────────────────
         self._log("Stage 0b: Universal legal translation...")
         translation = self.translator.translate(user_query)
@@ -237,7 +261,23 @@ class LegalRAGPipeline:
 
         if routing.primary_acts and (not intent.act_hint or intent.confidence < 0.5):
             intent.act_hint = routing.primary_acts[0]
-        if translation.domain in DOMAIN_TO_INTENT:
+        # BUGFIX: this used to override intent.label unconditionally whenever
+        # translation.domain matched one of the 4 DOMAIN_TO_INTENT keys — no
+        # confidence check at all, unlike the act_hint override right above it
+        # (which only fills in when the classifier itself is unsure). A
+        # confident, correctly rule/semantic-classified "punitive" label (e.g.
+        # a clear "what is the punishment for X" query) could get silently
+        # stomped by translation.domain — a side-effect field from the SAME
+        # LLM call that's mainly focused on producing search_queries, not a
+        # carefully-tuned classification — just because it guessed "civil" or
+        # "constitutional". That matters beyond cosmetics: metadata_irac_score
+        # gives a full +1.0 conclusion-type bonus specifically for
+        # intent.label=="punitive" matching a punitive section, so losing the
+        # label here measurably down-weighted the correct sections for
+        # exactly the punishment-focused queries this system targets. Gated
+        # the same way act_hint already is: only let the domain guess
+        # override when the classifier itself wasn't confident.
+        if translation.domain in DOMAIN_TO_INTENT and intent.confidence < 0.5:
             intent.label = DOMAIN_TO_INTENT[translation.domain]
 
         # Override intent to 'punitive' when pinner identified death/accident/crime sections
@@ -440,8 +480,20 @@ class LegalRAGPipeline:
                         dense_act_filter=None,
                     )
                     from pipeline.temporal_filter import ValidatedChunk as _VC
+                    # BUGFIX: this omitted `is_valid`, a required field with
+                    # no default on ValidatedChunk (chunk, is_valid,
+                    # validity_label, warning, penalized_score) — every call
+                    # here raised TypeError: missing 1 required positional
+                    # argument, caught by this block's own broad `except
+                    # Exception` below and logged as "non-fatal". In
+                    # practice that meant Rocchio feedback ALWAYS failed
+                    # silently, on every query that reached this stage —
+                    # never once actually added a rescued section. True to
+                    # match validity_label="active" (temporal_filter.py's
+                    # own convention: is_valid = label in ("active",) or
+                    # historical_query).
                     fb_valid = [
-                        _VC(chunk=c, validity_label="active",
+                        _VC(chunk=c, is_valid=True, validity_label="active",
                             warning="", penalized_score=c.score)
                         for c in fb_raw
                     ]
@@ -537,7 +589,8 @@ class LegalRAGPipeline:
         # ── Stage 7: Answer generation ────────────────────────────────────────
         self._log("Stage 7: Generating answer...")
         answer = self.generator.generate(
-            query=user_query, intent=intent, ranked=ranked, top_k=FINAL_TOP_K)
+            query=user_query, intent=intent, ranked=ranked, top_k=FINAL_TOP_K,
+            known_gaps=all_gaps)
 
         if debug_trace is not None:
             debug_trace["final"] = list(answer.retrieved_section_ids)

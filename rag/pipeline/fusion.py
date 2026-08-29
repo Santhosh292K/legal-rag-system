@@ -93,7 +93,29 @@ def _sections_from_case_chunks(case_chunks: list[dict]) -> list[str]:
             parts = cited.strip().split()
             if len(parts) == 2:
                 number, act = parts
-                sections.append(f"{act.upper()}_{number}")
+                # BUGFIX: this passed `number` through unchanged — no
+                # uppercasing (a lettered cite like "120b bns" stayed
+                # lowercase) and no zero-padding (final_dataset.json zero-
+                # pads the numeric part of section_id to 3 digits for every
+                # act except CRPC — e.g. "5 BNS" needs to become "BNS_005",
+                # not "BNS_5"). Since this feeds fetch_by_ids(), which does
+                # an exact single-value match per id with no fuzzy fallback
+                # (pipeline/hybrid_retriever.py), a mismatch here silently
+                # dropped the cited section rather than pinning it — a real
+                # document citing a low-numbered or lettered section (common:
+                # IPC_498A, IPC_120B) would lose that citation entirely.
+                # Emit both the zero-padded and raw-width candidates (like
+                # hybrid_retriever.py's direct lookup already does for the
+                # same CRPC-is-unpadded reason) — fetch_by_ids() silently
+                # skips whichever one doesn't exist, so this is safe either way.
+                num_norm = number.strip().upper()
+                m = re.match(r'^(\d+)([A-Z]?)$', num_norm)
+                if m:
+                    digits, letter = m.groups()
+                    sections.append(f"{act.upper()}_{digits.zfill(3)}{letter}")
+                    sections.append(f"{act.upper()}_{digits}{letter}")
+                else:
+                    sections.append(f"{act.upper()}_{num_norm}")
 
         # Also catch already-formatted IDs anywhere in the chunk text itself.
         sections.extend(SECTION_ID_PATTERN.findall(chunk.get("text", "")))

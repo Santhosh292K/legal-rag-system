@@ -14,7 +14,7 @@ import re
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
-    Filter, FieldCondition, MatchValue, SparseVector,
+    Filter, FieldCondition, MatchValue, MatchAny, SparseVector,
 )
 from sentence_transformers import SentenceTransformer
 
@@ -269,24 +269,59 @@ class HybridRetriever:
             if not act_code:
                 continue
 
-            # Strategy 1: look up by section_number field (stored as string, e.g. "1")
+            # BUGFIX: `pattern` was extracted from `query.lower()`, so a
+            # lettered section (e.g. user types "IPC 304A" or "304a") always
+            # arrived here lowercased ("304a") — but data/indexer.py stores
+            # both section_number ("304A") and section_id ("IPC_304A") with
+            # an UPPERCASE letter suffix (verified against final_dataset.json:
+            # every lettered entry, e.g. "29A", "120B", is upper). Strategy 1
+            # compared "304a" against stored "304A" and never matched.
+            # Strategy 2 was worse: `sec_num.zfill(3) if sec_num.isdigit()
+            # else sec_num` left ANY lettered sec_num both unpadded AND
+            # lowercase ("304a" instead of "304A"), since "304a".isdigit() is
+            # False. Together this meant the direct-lookup fast path — the
+            # one meant to GUARANTEE an exact section reference resolves —
+            # silently missed every lettered section: IPC_304A, IPC_498A,
+            # IPC_120B, IPC_366A among them, some of the most-cited sections
+            # in this dataset. Uppercase once, up front, and use it everywhere.
+            sec_num_norm = sec_num.upper()
+
+            # Strategy 1: look up by section_number field (stored as string,
+            # unpadded but uppercase, e.g. "1", "304A")
             results1, _ = self.client.scroll(
                 collection_name=COLLECTION_NAME,
                 scroll_filter=Filter(must=[
                     FieldCondition(key="act_code",       match=MatchValue(value=act_code)),
-                    FieldCondition(key="section_number", match=MatchValue(value=sec_num)),
+                    FieldCondition(key="section_number", match=MatchValue(value=sec_num_norm)),
                 ]),
                 limit=3, with_payload=True,
             )
 
-            # Strategy 2: look up by section_id field (e.g. "IPC_001" for sec_num="1")
-            # Pad to 3 digits to match the stored ID format
-            padded    = sec_num.zfill(3) if sec_num.isdigit() else sec_num
-            target_id = f"{act_code}_{padded}"
+            # Strategy 2: look up by section_id field (e.g. "IPC_001" for
+            # sec_num="1", "IPC_029A" for sec_num="29A"). Two more wrinkles
+            # beyond the case fix above, both confirmed against
+            # final_dataset.json directly:
+            #   1. `sec_num_norm.zfill(3)` pads the whole string by total
+            #      length, not the numeric part specifically — "29A" is
+            #      already 3 characters, so zfill(3) leaves it unchanged
+            #      ("29A") instead of the actually-stored "029A". Split the
+            #      digits from the letter suffix and zero-pad only the digits.
+            #   2. The zero-padding convention itself isn't universal: every
+            #      act pads section numbers to 3 digits in section_id EXCEPT
+            #      CRPC, whose section_id numeric widths are a genuine mix of
+            #      1/2/3 digits (unpadded, as authored). Try both the padded
+            #      and the raw form via MatchAny rather than guessing per act.
+            digits_letters = re.match(r'^(\d+)([A-Z]*)$', sec_num_norm)
+            if digits_letters:
+                digits, letters = digits_letters.groups()
+                target_ids = list({f"{act_code}_{digits.zfill(3)}{letters}",
+                                    f"{act_code}_{digits}{letters}"})
+            else:
+                target_ids = [f"{act_code}_{sec_num_norm}"]
             results2, _ = self.client.scroll(
                 collection_name=COLLECTION_NAME,
                 scroll_filter=Filter(must=[
-                    FieldCondition(key="section_id", match=MatchValue(value=target_id)),
+                    FieldCondition(key="section_id", match=MatchAny(any=target_ids)),
                 ]),
                 limit=3, with_payload=True,
             )

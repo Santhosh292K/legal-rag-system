@@ -55,6 +55,17 @@ INJURY_TERMS   = ["fracture", "laceration", "stab wound", "gunshot wound",
 AMOUNT_PATTERN = re.compile(r"(?:Rs\.?|₹|INR)\s*[\d,]+(?:\.\d+)?", re.IGNORECASE)
 LOCATION_HINT  = re.compile(r"(?:at|near|in front of)\s+([A-Z][A-Za-z\s]{3,40}?)(?:,|\.|$)")
 
+# BUGFIX: SECTION_PATTERN's act group can capture "IT Act" or "Evidence Act"
+# literally (that's how people write it in an FIR), but the dataset's real
+# act codes are "ITA" and "IEA" — `.replace(" ", "").upper()` alone turned
+# these into "ITACT" / "EVIDENCEACT", which don't exist as an act_code
+# anywhere in final_dataset.json. That silently broke every section citation
+# in the "IT Act" / "Evidence Act" phrasing (never just the numeric variants
+# already handled correctly) once fusion.py tried to build a section_id from
+# it — same normalization fusion.py/answer_generator.py already apply to the
+# same two names.
+ACT_NAME_TO_CODE = {"ITACT": "ITA", "EVIDENCEACT": "IEA"}
+
 
 def _dedupe(items: list[str]) -> list[str]:
     seen, out = set(), []
@@ -81,6 +92,7 @@ def extract_entities(text: str) -> ExtractedEntities:
     for match in SECTION_PATTERN.finditer(text):
         numbers = re.split(r"[,\s]+and\s+|,\s*", match.group(1).strip())
         act = (match.group(2) or "").replace(" ", "").upper() or None
+        act = ACT_NAME_TO_CODE.get(act, act)
         for n in numbers:
             n = n.strip().rstrip(",")
             if n:

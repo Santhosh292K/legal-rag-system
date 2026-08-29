@@ -451,6 +451,13 @@ def llm_expand(query: str, intent: str, n: int = 3) -> list[str]:
 
 # ── Public class ────────────────────────────────────────────────────────────
 
+# Below this many distinct fast-path (non-LLM) query variants, fall back to
+# llm_expand() for extra coverage. At or above it, skip the LLM call
+# entirely — used by expand() below. See the "Gap: LLM query expansion..."
+# comment there for why this gate exists at all.
+FAST_EXPANSION_MIN = 3
+
+
 class QueryExpander:
     """
     embed_fn is optional. Pass the shared embedding model's encode function
@@ -484,11 +491,6 @@ class QueryExpander:
                 charge_clean = charge.strip()
                 queries.append(f"punishment under {charge_clean}")
 
-        try:
-            queries.extend(llm_expand(query, intent.label, n=3))
-        except Exception:
-            pass
-
         # Embedding-based concept expansion (replaces old regex synonym dict)
         queries.extend(semantic_concept_expand(query, self._matcher))
 
@@ -499,6 +501,35 @@ class QueryExpander:
 
         if intent.act_hint:
             queries.append(f"{query} under {intent.act_hint}")
+
+        # Dedup what the fast (non-LLM) methods above produced BEFORE
+        # deciding whether the LLM call below is even needed — that
+        # decision has to be based on genuinely distinct variants, not the
+        # raw pre-dedup count.
+        seen, fast_unique = set(), []
+        for q in queries:
+            q_norm = q.strip().lower()
+            if q_norm not in seen:
+                seen.add(q_norm)
+                fast_unique.append(q.strip())
+
+        # Gap (latency): this used to call llm_expand() unconditionally on
+        # every query — one guaranteed extra sequential ollama.chat
+        # round-trip regardless of whether the fast methods above already
+        # gave the retriever plenty to work with. IntentClassifier.classify()
+        # and QueryRouter.route() both already gate their LLM fallback on
+        # the fast path's confidence; this brings QueryExpander in line with
+        # that same pattern instead of being the one stage that always pays
+        # the LLM cost. FAST_EXPANSION_MIN=3 means: original query + at
+        # least 2 more distinct variants from the fast methods already
+        # covers it — llm_expand() only fires as a genuine fallback when
+        # they don't (no act hint, no matched concept, no abbreviation, no
+        # predicted charges — a query the fast tier has little to say about).
+        if len(fast_unique) < FAST_EXPANSION_MIN:
+            try:
+                queries.extend(llm_expand(query, intent.label, n=3))
+            except Exception:
+                pass
 
         seen, unique = set(), []
         for q in queries:

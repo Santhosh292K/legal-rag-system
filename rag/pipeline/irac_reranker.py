@@ -4,6 +4,7 @@ Novel component #4 — Lightweight IRAC-Based Reranker
 """
 import re
 import json
+import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -249,10 +250,26 @@ class IRACReranker:
         ):
             act_code = ACT_CODE_MAP.get(act_abbr, "")
             if act_code:
-                direct_ids.add(f"{act_code}_{sec_num.upper().zfill(3)}")
-                direct_ids.add(f"{act_code}_{sec_num.upper()}")
-                # Also match zero-padded variants like IPC_001 vs IPC_1
-                direct_ids.add(f"{act_code}_{int(sec_num):03d}" if sec_num.isdigit() else f"{act_code}_{sec_num.upper()}")
+                # BUGFIX: `sec_num.upper().zfill(3)` pads by TOTAL string
+                # length, not the numeric part specifically — for a section
+                # like "29a" this becomes "29A" (already 3 chars, zfill is a
+                # no-op) instead of the actually-indexed "029A" (confirmed
+                # against final_dataset.json: section_id zero-pads the
+                # numeric prefix to 3 digits, then appends the letter suffix
+                # — e.g. IPC_029A, IPC_120B). Split digits from any letter
+                # suffix and zero-pad only the digits. Also try the
+                # unpadded form: every act pads to 3 digits in section_id
+                # EXCEPT CRPC, whose section_ids are a genuine mix of
+                # 1/2/3-digit widths (unpadded, as authored) — rather than
+                # special-case CRPC, add both candidates for every act.
+                sec_norm = sec_num.upper()
+                m = re.match(r'^(\d+)([A-Z]?)$', sec_norm)
+                if m:
+                    digits, letter = m.groups()
+                    direct_ids.add(f"{act_code}_{digits.zfill(3)}{letter}")
+                    direct_ids.add(f"{act_code}_{digits}{letter}")
+                else:
+                    direct_ids.add(f"{act_code}_{sec_norm}")
 
         # Stage 1: fast metadata scoring
         ranked = []
@@ -276,10 +293,25 @@ class IRACReranker:
                 final     = rc.irac_score * 0.5 + llm_irac * 0.5
 
                 if self.use_cross_enc and self.cross_encoder:
-                    ce        = self.cross_encoder.predict(
+                    ce        = float(self.cross_encoder.predict(
                         [(query, (rc.chunk.enriched_context or rc.chunk.content)[:512])]
-                    )[0]
-                    ce_norm   = (ce + 1) / 2
+                    )[0])
+                    # BUGFIX: RERANKER_MODEL (BAAI/bge-reranker-large) is a
+                    # classification-head cross-encoder — its raw .predict()
+                    # output is an UNBOUNDED logit (BAAI's own model card:
+                    # apply sigmoid to get a [0,1] relevance score), not a
+                    # value already bounded to [-1, 1]. `(ce + 1) / 2` is the
+                    # right transform for a cosine-similarity-style bipolar
+                    # score, which this isn't — it let ce_norm land far
+                    # outside [0, 1] (e.g. a confidently-relevant pair at raw
+                    # score +6 became ce_norm=3.5), corrupting final_score
+                    # and everything downstream that assumes it's ~[0,1]
+                    # (answer_generator.py's confidence thresholds, the IRAC
+                    # bars). Sigmoid is the model's documented mapping.
+                    # Numerically-stable sigmoid — math.exp(-ce) can overflow
+                    # for a very negative logit if computed the naive way.
+                    ce_norm   = (1.0 / (1.0 + math.exp(-ce)) if ce >= 0
+                                 else math.exp(ce) / (1.0 + math.exp(ce)))
                     final     = final * 0.7 + ce_norm * 0.3
                     rc.cross_enc_score = ce_norm
 
