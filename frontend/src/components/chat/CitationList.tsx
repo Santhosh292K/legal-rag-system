@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import type { Citation } from "@/lib/types";
 import { Badge, validityTone } from "@/components/ui/Badge";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { cn } from "@/lib/utils";
 
 function CitationCard({ citation, id }: { citation: Citation; id: string }) {
@@ -13,7 +14,7 @@ function CitationCard({ citation, id }: { citation: Citation; id: string }) {
   return (
     <div
       id={id}
-      className="scroll-mt-20 rounded-xl border border-border bg-bg-elevated p-3.5 transition-shadow target:ring-2 target:ring-brand/50"
+      className="group scroll-mt-20 rounded-xl border border-border bg-bg-elevated p-3.5 transition-shadow target:ring-2 target:ring-brand/50"
     >
       <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="rounded-md bg-bg-subtle px-1.5 py-0.5 font-mono text-[12px] font-semibold text-text">
@@ -23,6 +24,11 @@ function CitationCard({ citation, id }: { citation: Citation; id: string }) {
           {citation.validity}
         </Badge>
         <Badge tone="neutral">{citation.category}</Badge>
+        <CopyButton
+          text={`${citation.section_id} — ${citation.act_name}\n${citation.content}`}
+          label="Copy citation"
+          className="ml-auto p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        />
       </div>
       <p className="mb-1 text-[12.5px] font-medium text-text-muted">{citation.act_name}</p>
       <p

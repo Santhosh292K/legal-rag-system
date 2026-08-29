@@ -1,6 +1,7 @@
 import { Scale } from "lucide-react";
 import type { QueryResponse } from "@/lib/types";
 import { Badge, confidenceTone } from "@/components/ui/Badge";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { AnswerText } from "./AnswerText";
 import { CitationList } from "./CitationList";
 import { IracBars } from "./IracBars";
@@ -16,15 +17,16 @@ export function AnswerCard({ answer, id }: { answer: QueryResponse; id: string }
         <Scale size={13} strokeWidth={2.25} />
       </span>
 
-      <div className="min-w-0 flex-1 space-y-4 rounded-2xl rounded-tl-sm border border-border bg-bg-elevated p-4 shadow-sm sm:p-5">
+      <div className="min-w-0 flex-1 space-y-4 rounded-2xl rounded-tl-sm border border-border bg-bg-elevated p-4 shadow-[var(--shadow-sm)] sm:p-5">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge tone={confidenceTone(answer.confidence)} dot>
             {answer.confidence} confidence
           </Badge>
           {answer.intent && <Badge tone="brand">{answer.intent}</Badge>}
           {answer.case_id && <Badge tone="info">case: {answer.case_id}</Badge>}
-          <span className="ml-auto text-[11px] text-text-faint">
+          <span className="ml-auto flex items-center gap-2 text-[11px] text-text-faint">
             {formatMs(answer.elapsed_ms)}
+            <CopyButton text={answer.answer} label="Copy answer" className="p-1" />
           </span>
         </div>
 

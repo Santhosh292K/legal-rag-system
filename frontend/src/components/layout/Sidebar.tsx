@@ -1,20 +1,27 @@
 "use client";
 
-import { FileText, FolderClosed, MessagesSquare, Plus } from "lucide-react";
+import { FileText, FolderClosed, MessagesSquare, Plus, SquarePen } from "lucide-react";
 import { useState } from "react";
+import type { Conversation } from "@/lib/history";
 import type { CaseInfo } from "@/lib/types";
 import { cn, initials } from "@/lib/utils";
-import { UploadDropzone } from "./UploadDropzone";
+import { UploadDropzone } from "@/components/cases/UploadDropzone";
+import { HistoryList } from "@/components/history/HistoryList";
 
 const CASE_ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 
-export function CaseSidebar({
+export function Sidebar({
   cases,
   activeCaseId,
   onSelectCase,
   onCreateCase,
   onUploaded,
   open,
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+  onDeleteConversation,
+  onNewChat,
 }: {
   cases: CaseInfo[];
   activeCaseId: string | null;
@@ -22,6 +29,11 @@ export function CaseSidebar({
   onCreateCase: (caseId: string) => void;
   onUploaded: () => void;
   open: boolean;
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  onSelectConversation: (id: string) => void;
+  onDeleteConversation: (id: string) => void;
+  onNewChat: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -44,11 +56,32 @@ export function CaseSidebar({
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 -translate-x-full flex-col gap-5 overflow-y-auto border-r border-border bg-bg-elevated px-4 py-5 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 -translate-x-full flex-col gap-5 overflow-y-auto border-r border-border bg-bg-elevated px-4 py-5 shadow-[var(--shadow-lg)] transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 lg:shadow-none",
         open && "translate-x-0",
       )}
     >
+      <button
+        type="button"
+        onClick={onNewChat}
+        className="flex w-full items-center gap-2.5 rounded-lg border border-border px-3 py-2 text-left text-sm font-medium text-text transition-colors hover:border-border-strong hover:bg-bg-subtle"
+      >
+        <SquarePen size={15} />
+        New chat
+      </button>
+
       <div>
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-faint">
+          History
+        </p>
+        <HistoryList
+          conversations={conversations}
+          activeId={activeConversationId}
+          onSelect={onSelectConversation}
+          onDelete={onDeleteConversation}
+        />
+      </div>
+
+      <div className="border-t border-border pt-4">
         <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-faint">
           Consultation
         </p>
@@ -67,7 +100,7 @@ export function CaseSidebar({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div>
         <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-faint">
           Cases
         </p>
@@ -93,7 +126,7 @@ export function CaseSidebar({
         </form>
         {formError && <p className="mb-2 px-1 text-[11px] text-danger">{formError}</p>}
 
-        <div className="flex flex-col gap-1 overflow-y-auto">
+        <div className="flex flex-col gap-1">
           {cases.length === 0 && (
             <p className="px-2 py-1 text-[12px] leading-relaxed text-text-faint">
               No cases yet — create one to upload FIRs, charge sheets, or evidence and

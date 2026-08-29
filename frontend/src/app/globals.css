@@ -5,6 +5,7 @@
   --bg: #f6f7fb;
   --bg-elevated: #ffffff;
   --bg-subtle: #eef0f6;
+  --bg-overlay: #ffffff;
   --border: #e2e4ee;
   --border-strong: #cdd1e0;
   --text: #14161f;
@@ -27,15 +28,26 @@
   --info: #2563eb;
   --info-soft: #eff6ff;
 
-  --shadow-color: 220 40% 30%;
+  /* Elevation — a matched pair of shadows per level, tuned so dark mode
+     reads as a soft glow (translucent white) rather than an invisible
+     black-on-black shadow. Referenced via the --shadow-* tokens below,
+     never hardcoded rgba() at a call site, so both themes stay correct
+     automatically. */
+  --shadow-color: 222 47% 11%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  --shadow-md: 0 4px 12px -2px hsl(var(--shadow-color) / 0.10), 0 2px 4px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 16px 40px -8px hsl(var(--shadow-color) / 0.16), 0 4px 10px -4px hsl(var(--shadow-color) / 0.08);
+  --shadow-brand: 0 8px 24px -6px hsl(243 68% 25% / 0.35);
+
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #0b0c11;
+  --bg: #0a0b10;
   --bg-elevated: #14161f;
   --bg-subtle: #191b26;
-  --border: #262938;
+  --bg-overlay: #1b1e2a;
+  --border: #24273a;
   --border-strong: #33374a;
   --text: #edeef5;
   --text-muted: #9a9db3;
@@ -44,7 +56,7 @@
   --brand: #818cf8;
   --brand-strong: #a5b4fc;
   --brand-soft: #201f3d;
-  --brand-contrast: #0b0c11;
+  --brand-contrast: #0b0c14;
 
   --accent: #2dd4bf;
 
@@ -57,15 +69,22 @@
   --info: #60a5fa;
   --info-soft: #101d33;
 
+  --shadow-color: 0 0% 0%;
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.24);
+  --shadow-md: 0 4px 16px -2px hsl(var(--shadow-color) / 0.4), 0 0 0 1px hsl(240 20% 100% / 0.03);
+  --shadow-lg: 0 20px 48px -10px hsl(var(--shadow-color) / 0.55), 0 0 0 1px hsl(240 20% 100% / 0.04);
+  --shadow-brand: 0 8px 28px -6px hsl(234 89% 74% / 0.28);
+
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0b0c11;
+    --bg: #0a0b10;
     --bg-elevated: #14161f;
     --bg-subtle: #191b26;
-    --border: #262938;
+    --bg-overlay: #1b1e2a;
+    --border: #24273a;
     --border-strong: #33374a;
     --text: #edeef5;
     --text-muted: #9a9db3;
@@ -74,7 +93,7 @@
     --brand: #818cf8;
     --brand-strong: #a5b4fc;
     --brand-soft: #201f3d;
-    --brand-contrast: #0b0c11;
+    --brand-contrast: #0b0c14;
 
     --accent: #2dd4bf;
 
@@ -87,6 +106,12 @@
     --info: #60a5fa;
     --info-soft: #101d33;
 
+    --shadow-color: 0 0% 0%;
+    --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.24);
+    --shadow-md: 0 4px 16px -2px hsl(var(--shadow-color) / 0.4), 0 0 0 1px hsl(240 20% 100% / 0.03);
+    --shadow-lg: 0 20px 48px -10px hsl(var(--shadow-color) / 0.55), 0 0 0 1px hsl(240 20% 100% / 0.04);
+    --shadow-brand: 0 8px 28px -6px hsl(234 89% 74% / 0.28);
+
     color-scheme: dark;
   }
 }
@@ -95,6 +120,7 @@
   --color-bg: var(--bg);
   --color-bg-elevated: var(--bg-elevated);
   --color-bg-subtle: var(--bg-subtle);
+  --color-bg-overlay: var(--bg-overlay);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text: var(--text);
@@ -115,6 +141,10 @@
   --color-info-soft: var(--info-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --shadow-elevation-sm: var(--shadow-sm);
+  --shadow-elevation-md: var(--shadow-md);
+  --shadow-elevation-lg: var(--shadow-lg);
+  --shadow-elevation-brand: var(--shadow-brand);
 }
 
 * {
@@ -128,11 +158,22 @@ html {
 body {
   background: var(--color-bg);
   color: var(--color-text);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
   background: var(--brand);
   color: var(--brand-contrast);
+}
+
+/* A single, consistent focus treatment everywhere — visible for keyboard
+   navigation, silent for mouse/touch (:focus-visible), so production
+   accessibility doesn't come at the cost of a ring flashing on every click. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Slim, theme-aware scrollbars — default browser scrollbars read as
@@ -173,4 +214,36 @@ body {
 }
 .animate-pulse-dot {
   animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--bg-subtle) 30%,
+    var(--border) 50%,
+    var(--bg-subtle) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* Subtle ambient brand glow for the empty-state hero — a flat icon on a
+   flat page reads as a placeholder; a soft radial glow behind it reads as
+   a designed focal point. Kept faint enough to stay out of the way of
+   text contrast in both themes. */
+.brand-glow {
+  position: relative;
+}
+.brand-glow::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle, var(--brand) 0%, transparent 70%);
+  opacity: 0.16;
+  filter: blur(24px);
+  z-index: -1;
 }

@@ -2,6 +2,7 @@
 
 import { CloudUpload, FileWarning, Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { ApiError, uploadDocument } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -25,10 +26,15 @@ export function UploadDropzone({
     setBusy(true);
     setError(null);
     try {
-      await uploadDocument(caseId, file);
+      const result = await uploadDocument(caseId, file);
       onUploaded();
+      toast.success(`${result.doc_type} indexed`, {
+        description: `${result.chunks_indexed} chunk${result.chunks_indexed === 1 ? "" : "s"} added to ${caseId} · ${result.elapsed_s}s`,
+      });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Upload failed.");
+      const message = e instanceof ApiError ? e.message : "Upload failed.";
+      setError(message);
+      toast.error("Upload failed", { description: message });
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
