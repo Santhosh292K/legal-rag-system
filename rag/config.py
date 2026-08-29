@@ -1,11 +1,24 @@
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# All path defaults below are resolved relative to this file's own
+# location (rag/), not the process's current working directory. Several
+# pipeline modules (hybrid_retriever, legal_kg, chunk_structurer,
+# keyword_index, alea, and LegalRAGPipeline itself) carry their own
+# "./data/..." default parameters for the same reason: whoever imports
+# this package — a CLI run from rag/, or backend/app/state.py importing
+# it in-process — must not be able to break data loading by having a
+# different CWD. See PIPELINE_DIR usage throughout this file, and the
+# matching Path(__file__).parent.parent pattern in those other modules.
+PIPELINE_DIR = Path(__file__).resolve().parent
+
 # ── LLM ──────────────────────────────────────────────
 OLLAMA_FAST_MODEL     = "qwen2.5:3b"
-OLLAMA_ANSWER_MODEL   = "qwen2.5:14b" 
+OLLAMA_ANSWER_MODEL   = "qwen2.5:14b"
 
 # ── Embeddings ───────────────────────────────────────
 EMBEDDING_MODEL       = "BAAI/bge-large-en-v1.5"
@@ -13,8 +26,10 @@ EMBEDDING_DIM         = 1024
 RERANKER_MODEL        = "BAAI/bge-reranker-large"
 
 # ── Qdrant ───────────────────────────────────────────
-QDRANT_PATH           = "./qdrant_db"
-COLLECTION_NAME       = "legal_sections"
+# env override still resolved against PIPELINE_DIR when relative, so
+# QDRANT_PATH=./my_db in .env behaves the same regardless of CWD.
+QDRANT_PATH           = str(PIPELINE_DIR / os.getenv("QDRANT_PATH", "qdrant_db"))
+COLLECTION_NAME       = os.getenv("COLLECTION_NAME", "legal_sections")
 
 # ── Retrieval ────────────────────────────────────────
 BM25_TOP_K    = 25
@@ -47,8 +62,11 @@ INTENT_LABELS         = ["statute", "case_law", "definition", "procedural", "pun
 STATUS_ACTIVE         = "active"
 
 # ── Data paths ───────────────────────────────────────
-CSV_PATH              = "./data/dataset.csv"
-JSON_PATH             = "./data/final_dataset.json"
+CSV_PATH              = str(PIPELINE_DIR / os.getenv("CSV_PATH", "data/dataset.csv"))
+JSON_PATH             = str(PIPELINE_DIR / os.getenv("JSON_PATH", "data/final_dataset.json"))
+BM25_VOCAB_PATH       = str(PIPELINE_DIR / os.getenv("BM25_VOCAB_PATH", "data/bm25_vocab.json"))
+BM25_IDF_PATH         = str(PIPELINE_DIR / os.getenv("BM25_IDF_PATH", "data/bm25_idf.json"))
+ONTOLOGY_PATH         = str(PIPELINE_DIR / os.getenv("ONTOLOGY_PATH", "data/legal_elements_ontology.json"))
 
 """
 config_additions.py
@@ -86,4 +104,4 @@ GENERIC_CHUNK_SIZE     = 800     # characters
 GENERIC_CHUNK_OVERLAP  = 150
 
 # ── Case vector store ───────────────────────────────────────
-CASE_QDRANT_PATH        = "./qdrant_db"   # same instance, different collection
+CASE_QDRANT_PATH        = QDRANT_PATH   # same instance, different collection

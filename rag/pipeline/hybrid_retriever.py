@@ -21,7 +21,7 @@ from sentence_transformers import SentenceTransformer
 sys.path.append(str(Path(__file__).parent.parent))
 from config import (
     QDRANT_PATH, COLLECTION_NAME,
-    EMBEDDING_MODEL, BM25_TOP_K, DENSE_TOP_K, HYBRID_TOP_K,
+    EMBEDDING_MODEL, BM25_TOP_K, DENSE_TOP_K, HYBRID_TOP_K, BM25_VOCAB_PATH,
 )
 from data.bm25_tokenizer import tokenize as bm25_tokenize
 
@@ -92,7 +92,7 @@ def reciprocal_rank_fusion(
 # ── Retriever ─────────────────────────────────────────────────────────────────
 
 class HybridRetriever:
-    def __init__(self, vocab_path: str = "./data/bm25_vocab.json", client=None,
+    def __init__(self, vocab_path: str = BM25_VOCAB_PATH, client=None,
                  embed_model=None):
         # Accept an already-open client (e.g. shared with CaseIndexer, which
         # points at the same local ./qdrant_db folder) rather than always

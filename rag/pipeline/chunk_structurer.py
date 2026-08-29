@@ -18,6 +18,7 @@ import sys
 
 sys.path.append(str(Path(__file__).parent.parent))
 from pipeline.temporal_filter import ValidatedChunk
+from config import JSON_PATH
 
 
 # ── Structured chunk ──────────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ class ChunkStructurer:
 
     def __init__(
         self,
-        json_path: str = "./data/final_dataset.json",
+        json_path: str = JSON_PATH,
         client=None,
         collection_name: str = "legal_sections",
     ):

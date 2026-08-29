@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Iterable
 
 sys.path.append(str(Path(__file__).parent.parent))
+from config import JSON_PATH
 
 try:
     import networkx as nx
@@ -237,7 +238,7 @@ class LegalKnowledgeGraph:
 
     def build_from_json(
         self,
-        json_path: str = "./data/final_dataset.json",
+        json_path: str = JSON_PATH,
     ) -> "LegalKnowledgeGraph":
         """Fallback: build from dataset JSON when Qdrant client unavailable."""
         import json

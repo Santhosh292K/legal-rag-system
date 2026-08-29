@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.append(str(Path(__file__).parent.parent))
+from config import ONTOLOGY_PATH
 
 SIM_THRESHOLD = 0.40   # below this, sim(ri, e) is treated as no match (c=0 contribution)
 
@@ -86,7 +87,7 @@ class SectionScore:
     element_matches:        list[ElementMatch] = field(default_factory=list)
 
 
-def load_ontology(path: str = "./data/legal_elements_ontology.json") -> dict:
+def load_ontology(path: str = ONTOLOGY_PATH) -> dict:
     with open(path) as f:
         data = json.load(f)
     return {k: v for k, v in data.items() if not k.startswith("_")}
@@ -140,7 +141,7 @@ class ALEA:
     model's .encode method (e.g. CaseIndexer.embed_model.encode). ALEA never
     loads its own model."""
 
-    def __init__(self, embed_fn, ontology_path: str = "./data/legal_elements_ontology.json"):
+    def __init__(self, embed_fn, ontology_path: str = ONTOLOGY_PATH):
         self.embed_fn = embed_fn
         self.ontology = load_ontology(ontology_path)
 

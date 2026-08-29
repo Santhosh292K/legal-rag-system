@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
+from config import JSON_PATH
 
 MIN_KEYWORD_LEN = 4   # skip very short/generic keywords that would over-match
 
@@ -48,7 +49,7 @@ class KeywordMatch:
 
 
 class KeywordIndex:
-    def __init__(self, json_path: str = "./data/final_dataset.json"):
+    def __init__(self, json_path: str = JSON_PATH):
         self._index: dict[str, list[str]] = defaultdict(list)   # keyword -> [section_ids]
         self._weight: dict[str, float] = {}                      # keyword -> specificity weight
         self._loaded_from = json_path

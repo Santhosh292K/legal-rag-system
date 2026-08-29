@@ -57,4 +57,28 @@ def bootstrap_rag() -> None:
     if str(RAG_DIR) not in sys.path:
         sys.path.insert(0, str(RAG_DIR))
     os.chdir(RAG_DIR)
+
+    # These are all git-ignored, generated artifacts (see rag/.gitignore) —
+    # on a fresh checkout they simply don't exist yet, which otherwise
+    # surfaces as a bare FileNotFoundError several frames deep inside
+    # HybridRetriever/CaseIndexer with no indication of *why*. Fail fast
+    # here instead, with a message that says what to run.
+    required = {
+        "rag/data/final_dataset.json": "python data/csv_to_json.py data/dataset.csv data/final_dataset.json",
+        "rag/data/bm25_vocab.json":    "python data/build_bm25_idf.py",
+        "rag/data/bm25_idf.json":      "python data/build_bm25_idf.py",
+        "rag/qdrant_db":               "python data/indexer.py data/final_dataset.json",
+    }
+    missing = [
+        (rel, cmd) for rel, cmd in required.items()
+        if not (REPO_ROOT / rel).exists()
+    ]
+    if missing:
+        steps = "\n".join(f"  - {rel} missing — run (from rag/): {cmd}" for rel, cmd in missing)
+        raise RuntimeError(
+            "rag/ is missing generated data files (these are git-ignored, "
+            "so a fresh checkout never has them). See rag/README.md 'Setup' "
+            f"for the full data-prep steps:\n{steps}"
+        )
+
     _bootstrapped = True

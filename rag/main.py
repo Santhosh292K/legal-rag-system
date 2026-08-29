@@ -33,7 +33,7 @@ from pipeline.domain_router        import DomainRouter
 from pipeline.universal_translator import UniversalTranslator
 from pipeline.section_pinner       import SectionPinner, PIN_EXPLANATION
 from pipeline.legal_kg             import LegalKnowledgeGraph, kg_augment_ranked
-from config import HYBRID_TOP_K, RERANK_TOP_K, FINAL_TOP_K
+from config import HYBRID_TOP_K, RERANK_TOP_K, FINAL_TOP_K, JSON_PATH, BM25_VOCAB_PATH
 
 DOMAIN_TO_INTENT = {
     "civil":          "statute",
@@ -45,8 +45,8 @@ DOMAIN_TO_INTENT = {
 
 class LegalRAGPipeline:
 
-    def __init__(self, json_path="./data/final_dataset.json",
-                 vocab_path="./data/bm25_vocab.json", verbose=True, qdrant_client=None,
+    def __init__(self, json_path=JSON_PATH,
+                 vocab_path=BM25_VOCAB_PATH, verbose=True, qdrant_client=None,
                  # BUGFIX: accept an already-loaded embedding model, same
                  # pattern as qdrant_client above. Without this, every extra
                  # LegalRAGPipeline built on top of one already in memory
