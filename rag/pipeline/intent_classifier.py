@@ -522,7 +522,31 @@ class IntentClassifier:
             examples_path=ACT_EXAMPLES_PATH,
         )
 
-    def classify(self, query: str) -> QueryIntent:
+    def classify(self, query: str, raw_query: Optional[str] = None) -> QueryIntent:
+        """
+        query:     the text actually classified for label/act_hint/temporal —
+                   in main.py this is translation.primary_query when
+                   available, the LLM-rewritten "legal terminology" version
+                   of the user's question.
+        raw_query: BUGFIX — cutoff/date extraction below used to run against
+                   `query` too, but Stage 0b's Universal Translator exists
+                   specifically to strip narrative framing down to legal
+                   terminology (its own prompt's few-shot examples show
+                   this explicitly — a whole sentence of facts becomes
+                   "wrongful arrest public servant causing hurt IPC 342
+                   330"), and a date like "this incident happened on
+                   January 2024" is exactly the kind of narrative detail
+                   that rewrite discards. Once that happened, cutoff
+                   extraction had nothing left to find, and a query that
+                   very obviously named a date silently got no cutoff at
+                   all — visible in production as "January 2024" showing
+                   BNS_146 anyway, even though the same query passed
+                   directly (bypassing translation) extracted the date
+                   correctly. Defaults to `query` for any caller (or test)
+                   that doesn't pass one, so this is non-breaking.
+        """
+        if raw_query is None:
+            raw_query = query
         fast = rule_based_classify(query)
         if fast.confidence >= self.RULE_ACCEPT_THRESHOLD:
             result = fast
@@ -543,10 +567,10 @@ class IntentClassifier:
                     result = semantic or fast
 
         # Cutoff extraction runs regardless of which tier answered — it's a
-        # deterministic regex pass over the raw query text, not something
-        # any of the three classification tiers computes on their own.
-        # See _extract_cutoff's docstring.
-        cutoff_date, cutoff_year, cutoff_reason = _extract_cutoff(query.lower())
+        # deterministic regex pass over the ORIGINAL user text (raw_query),
+        # not `query` — see the raw_query parameter note above for why that
+        # distinction matters here specifically.
+        cutoff_date, cutoff_year, cutoff_reason = _extract_cutoff(raw_query.lower())
         if cutoff_year is not None:
             result.cutoff_year   = cutoff_year
             result.cutoff_date   = cutoff_date.isoformat() if cutoff_date else None

@@ -256,7 +256,14 @@ class LegalRAGPipeline:
 
         # ── Stage 1: Intent classification ───────────────────────────────────
         self._log("Stage 1: Classifying intent...")
-        intent = self.classifier.classify(translation.primary_query or user_query)
+        # BUGFIX: raw_query=user_query so cutoff/date extraction always sees
+        # the user's actual words — translation.primary_query has already
+        # had narrative details like "on January 2024" stripped out by
+        # Stage 0b (that's its job: rewrite facts into legal terminology).
+        # Without this, a query that plainly named a date got no cutoff at
+        # all whenever translation succeeded — see intent_classifier.py's
+        # classify() docstring for the full story.
+        intent = self.classifier.classify(translation.primary_query or user_query, raw_query=user_query)
         self._log(f"  Intent={intent.label}  Conf={intent.confidence:.2f}  Act={intent.act_hint}")
 
         if routing.primary_acts and (not intent.act_hint or intent.confidence < 0.5):

@@ -293,6 +293,31 @@ class IRACReranker:
                 llm_irac  = self._weighted_irac(li, lr, la, lc)
                 final     = rc.irac_score * 0.5 + llm_irac * 0.5
 
+                # BUGFIX: li/lr/la/lc — the LLM's own issue/rule/application/
+                # conclusion judgments — used to be folded into llm_irac
+                # (a single scalar for final_score) and then discarded.
+                # rc.issue_score/rule_score/application_score/
+                # conclusion_score stayed at their Stage-1 metadata-only
+                # values FOREVER, even for chunks that just got a real LLM
+                # look. Those Stage-1 values are plain Jaccard token overlap
+                # between the query and a typically-short rule_summary/
+                # issue_tags string — structurally biased near zero (a
+                # 9-token rule_summary against a 30+ token query, even with
+                # perfect topical overlap, caps Jaccard's numerator well
+                # below its denominator). answer_generator.py's
+                # _build_irac_summary() averages exactly these fields into
+                # the "IRAC coverage" bars shown to the user — so those bars
+                # were showing the crude pre-LLM estimate, not what the
+                # reranker actually concluded, which is why they read as
+                # near-zero (0.01-0.08) even for chunks confidently cited in
+                # the final answer. Overwrite with the LLM's own per-
+                # component scores so the displayed breakdown matches the
+                # judgment that actually produced final_score.
+                rc.issue_score       = li
+                rc.rule_score        = lr
+                rc.application_score = la
+                rc.conclusion_score  = lc
+
                 if self.use_cross_enc and self.cross_encoder:
                     ce        = float(self.cross_encoder.predict(
                         [(query, (rc.chunk.enriched_context or rc.chunk.content)[:512])]
