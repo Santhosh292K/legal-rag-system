@@ -498,9 +498,14 @@ def kg_augment_ranked(
         # comparison, so a mid-2024 changeover query resolves consistently
         # across all three places a chunk can enter the ranked list.
         temporal_meta = meta.get("temporal") or {}
+        # section_id is always "ACT_NUM" (e.g. "BNS_146") — no separate
+        # act_code field is reconstructed onto this record, so derive it
+        # the same reliable way the rest of this file already treats
+        # section_ids.
+        act_code = sid.split("_", 1)[0]
         from pipeline.temporal_filter import is_chronologically_future
         if is_chronologically_future(
-            temporal_meta.get("effective_date"), temporal_meta.get("enacted_year"),
+            act_code, temporal_meta.get("effective_date"), temporal_meta.get("enacted_year"),
             cutoff_year, cutoff_date,
         ):
             continue

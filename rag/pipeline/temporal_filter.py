@@ -105,7 +105,30 @@ def _parse_effective_date(s: "str | None") -> "date | None":
         return None
 
 
+# BUGFIX: is_chronologically_future's fallback — "no effective_date on this
+# chunk (real Qdrant payload, before a re-index picks up data/indexer.py's
+# new field) -> proxy it as Jan 1 of enacted_year" — is a fine approximation
+# for acts where enactment and taking effect are close together (IPC: 1860
+# enacted, 1862 effective; CRPC: 1973/1974; IEA: 1872/1872). It is actively
+# WRONG for BNS/BNSS/BSA specifically: Parliament passed them in Dec 2023
+# (enacted_year=2023 in the dataset) but they weren't notified into force
+# until 2024-07-01 — a ~7 MONTH gap. Jan-1-of-2023 is chronologically
+# BEFORE any 2024 cutoff, so the fallback proxy made BNS/BNSS/BSA look
+# already in force starting 2023 — silently defeating the exact exclusion
+# this whole file exists for, for exactly the three acts it's built around,
+# on every query asked before a re-index. ("a theft in January 2024" —
+# cutoff_date correctly extracted as 2024-01-01, but BNS's Jan-2023 proxy
+# effective date wasn't > that, so BNS_146 was not excluded.) Known and
+# fixed here directly, independent of whether a re-index has happened yet.
+KNOWN_EFFECTIVE_DATE_OVERRIDE: dict[str, date] = {
+    "BNS":  date(2024, 7, 1),
+    "BNSS": date(2024, 7, 1),
+    "BSA":  date(2024, 7, 1),
+}
+
+
 def is_chronologically_future(
+    act_code:           "str | None",
     effective_date_str: "str | None",
     enacted_year:       "int | None",
     cutoff_year:        "int | None",
@@ -129,6 +152,8 @@ def is_chronologically_future(
         cutoff_date = _parse_effective_date(cutoff_date)
 
     eff = _parse_effective_date(effective_date_str)
+    if eff is None:
+        eff = KNOWN_EFFECTIVE_DATE_OVERRIDE.get(act_code)
     if eff is None and enacted_year:
         eff = date(enacted_year, 1, 1)   # day precision unknown — Jan 1 proxy
     if eff is None:
@@ -209,7 +234,7 @@ class TemporalFilter:
             # year-only for the cases that need it (a bare "2024" with no
             # month genuinely can't be resolved more precisely).
             is_future_law = is_chronologically_future(
-                chunk.payload.get("effective_date"), enacted_year,
+                act_code, chunk.payload.get("effective_date"), enacted_year,
                 cutoff_year, cutoff_date,
             )
 

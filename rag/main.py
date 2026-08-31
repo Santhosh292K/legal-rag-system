@@ -512,7 +512,7 @@ class LegalRAGPipeline:
                     fb_raw = [
                         c for c in fb_raw
                         if not is_chronologically_future(
-                            c.payload.get("effective_date"), c.enacted_year,
+                            c.act_code, c.payload.get("effective_date"), c.enacted_year,
                             intent.cutoff_year, intent.cutoff_date,
                         )
                     ]
