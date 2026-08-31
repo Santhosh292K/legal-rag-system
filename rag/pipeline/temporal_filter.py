@@ -9,8 +9,9 @@ Filters and flags retrieved chunks based on:
 
 Returns chunks with validity flags attached.
 """
+import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 import sys
 
@@ -38,6 +39,7 @@ PENALTY = {
     "repealed":   0.10,   # severe — almost certainly wrong
     "superseded": 0.50,   # replaced by another section
     "unknown":    0.80,   # metadata gap — slight penalty
+    "future":     0.05,   # didn't exist yet at the query's own date — near-hard exclusion
 }
 
 WARNING_MSG = {
@@ -45,7 +47,96 @@ WARNING_MSG = {
     "repealed":   "This section has been repealed and is no longer in force.",
     "superseded": "This section has been superseded by a later provision.",
     "unknown":    "Amendment status is unknown. Verify independently.",
+    "future":     "This provision had not been enacted yet at the time relevant "
+                  "to your query — it could not have applied.",
 }
+
+# 2024-07-01: IPC, CrPC and the Indian Evidence Act were repealed and
+# replaced by BNS, BNSS and BSA respectively. The dataset's own
+# superseded_by field is populated on only a single record (the Joseph
+# Shine/IPC_497 case) — the old acts were never reciprocally linked to
+# their successors (see data/indexer.py's build_payload note on
+# superseded_by) — so this chain is hardcoded from the (undisputed, dated)
+# legislative fact rather than relying on per-record metadata that doesn't
+# carry it. Used only to demote a predecessor act for an EXPLICIT
+# "current law" query — see is_stale_law below.
+ACT_SUCCESSOR = {
+    "IPC":  "BNS",
+    "CRPC": "BNSS",
+    "IEA":  "BSA",
+}
+
+
+# ── Date-precise chronology ─────────────────────────────────────────────────
+# BUGFIX: everything above (and the first pass at this file) compared only
+# YEARS (chunk.enacted_year vs. cutoff_year). That's coincidentally correct
+# for this dataset's IPC(1860)/CRPC(1973)/IEA(1872) vs. BNS/BNSS/BSA(all
+# enacted 2023) split for any query anchored OUTSIDE 2024 — but BNS, BNSS
+# and BSA didn't take effect until 2024-07-01 (final_dataset.json's own
+# effective_date field, matching the actual notified date), a MID-YEAR
+# changeover. A query naming a month in 2024 ("a theft in January 2024",
+# "before 1 June 2024") carries exactly the information needed to resolve
+# that correctly, but year-only comparison threw it away and treated all of
+# 2024 as one ambiguous bucket — e.g. "January 2024" (unambiguously pre-BNS)
+# would incorrectly let BNS back in. Compare actual dates when the query
+# gives one; fall back to the year-only approximation only when it doesn't
+# (a bare "2024" with no month genuinely IS ambiguous — see
+# intent_classifier.py's _extract_cutoff).
+
+def _parse_effective_date(s: "str | None") -> "date | None":
+    """final_dataset.json's effective_date is written in two different
+    formats depending on which import batch wrote it — ISO 'YYYY-MM-DD'
+    for IPC/BNS/IEA/BSA, day-first 'DD-MM-YYYY' for CRPC/BNSS (verified
+    against the raw dataset directly). Handles both; also accepts an
+    already-ISO cutoff_date string built by intent_classifier.py. Returns
+    None (never raises) on anything unparseable."""
+    if not s:
+        return None
+    parts = re.split(r"[-/]", s.strip())
+    if len(parts) != 3:
+        return None
+    try:
+        if len(parts[0]) == 4:
+            y, mo, d = int(parts[0]), int(parts[1]), int(parts[2])
+        else:
+            d, mo, y = int(parts[0]), int(parts[1]), int(parts[2])
+        return date(y, mo, d)
+    except (ValueError, IndexError):
+        return None
+
+
+def is_chronologically_future(
+    effective_date_str: "str | None",
+    enacted_year:       "int | None",
+    cutoff_year:        "int | None",
+    cutoff_date:        "str | date | None" = None,
+) -> bool:
+    """True if a section could not possibly have applied to the query's own
+    date. Shared by TemporalFilter.filter (Stage 4), main.py's Rocchio
+    feedback merge, and legal_kg.py's KG augmentation — three separate
+    retrieval paths that can each inject a chunk into the final answer, so
+    all three need to agree on the exact same chronology check rather than
+    each keeping (or dropping) its own slice of it.
+
+    Prefers an exact date comparison (effective_date_str vs. cutoff_date)
+    when both sides carry day/month precision; falls back to enacted_year
+    vs. cutoff_year (whole calendar years) when either side only has a
+    bare year — see the module note above for why that matters for 2024.
+    """
+    if cutoff_year is None:
+        return False
+    if isinstance(cutoff_date, str):
+        cutoff_date = _parse_effective_date(cutoff_date)
+
+    eff = _parse_effective_date(effective_date_str)
+    if eff is None and enacted_year:
+        eff = date(enacted_year, 1, 1)   # day precision unknown — Jan 1 proxy
+    if eff is None:
+        return False
+
+    if cutoff_date is not None:
+        return eff > cutoff_date
+    return eff.year > cutoff_year
 
 
 class TemporalFilter:
@@ -61,18 +152,44 @@ class TemporalFilter:
         chunks:  list[RetrievedChunk],
         intent:  QueryIntent,
         cutoff_year: int | None = None,
+        cutoff_date: "str | date | None" = None,
     ) -> list[ValidatedChunk]:
+
+        # `intent.cutoff_year`/`intent.cutoff_date` (see intent_classifier.py)
+        # are the query's own extracted date, e.g. "before 2023" -> year
+        # 2022, or "before 1 June 2024" -> the exact date 2024-05-31.
+        # Callers may also pass either explicitly; either source anchors the
+        # query to a past date, which is a stronger and more specific signal
+        # than the coarse historical/current label — so it wins if present.
+        if cutoff_year is None:
+            cutoff_year = getattr(intent, "cutoff_year", None)
+        if cutoff_date is None:
+            cutoff_date = getattr(intent, "cutoff_date", None)
+        if isinstance(cutoff_date, str):
+            cutoff_date = _parse_effective_date(cutoff_date)
 
         historical_query = (intent.temporal == "historical")
         current_query    = (intent.temporal == "current")
-        results          = []
+        # BUGFIX: an explicit cutoff means the query names a real past
+        # date ("an FIR filed in 2019") even when the phrasing never
+        # tripped TEMPORAL_RULES's historical regex — without this, such
+        # queries fell through to the `else: penalty = PENALTY.get(...)`
+        # branch below, which does nothing period-specific, and BNS/BNSS/
+        # BSA sections (enacted_year=2023) sailed through with no penalty
+        # at all alongside the correct IPC/CRPC/IEA ones.
+        if cutoff_year is not None:
+            historical_query = True
+            current_query    = False
+        results = []
 
         for chunk in chunks:
             status       = (chunk.status or "unknown").lower()
             superseded   = bool(chunk.payload.get("superseded_by"))
             enacted_year = chunk.enacted_year
+            act_code     = chunk.act_code
 
-            # Determine validity label
+            # Intrinsic validity label, from the dataset's own status/
+            # supersession — independent of the query's own temporal anchor.
             if superseded:
                 label = "superseded"
             elif status in ("active", "amended", "repealed"):
@@ -80,22 +197,71 @@ class TemporalFilter:
             else:
                 label = "unknown"
 
-            # Apply penalty
-            if historical_query:
-                # For historical queries: amended/repealed are VALID
-                penalty = 1.0 if label in ("amended", "repealed", "superseded") else PENALTY[label]
-            elif current_query:
-                penalty = PENALTY.get(label, 0.80)
+            # Chronological impossibility: this section took effect AFTER
+            # the date the query is anchored to — it could not possibly
+            # have applied to that incident. This is a hard exclusion.
+            # Unlike the old code, it is NOT overridden by historical_query
+            # — historical intent is exactly what usually produces the
+            # cutoff in the first place (e.g. "before 2023"), so
+            # "historical" must never mean "let future law back in".
+            # Date-precise when the query and the record both support it
+            # (see is_chronologically_future's module note) — falls back to
+            # year-only for the cases that need it (a bare "2024" with no
+            # month genuinely can't be resolved more precisely).
+            is_future_law = is_chronologically_future(
+                chunk.payload.get("effective_date"), enacted_year,
+                cutoff_year, cutoff_date,
+            )
+
+            # Predecessor-act demotion: only for an EXPLICIT "current law"
+            # query with no date anchor (e.g. "what is the CURRENT
+            # punishment for theft") — a query naming IPC's successor
+            # act exists and this section is otherwise "active" in the
+            # dataset (which doesn't reciprocally mark IPC/CRPC/IEA as
+            # superseded — see ACT_SUCCESSOR's note). Deliberately NOT
+            # applied to "unspecified" queries: this dataset's own
+            # benchmark treats IPC as the default answer for ordinary
+            # scenario questions, so demoting it by default would trade a
+            # real bug fix for a large recall regression on queries that
+            # never asked about "current" law in the first place.
+            is_stale_law = bool(
+                current_query and not is_future_law
+                and label == "active" and ACT_SUCCESSOR.get(act_code)
+            )
+
+            if is_future_law:
+                label   = "future"
+                penalty = PENALTY["future"]
+            elif historical_query:
+                # Historical queries want the law that applied AT THE TIME —
+                # the dataset's own amended/repealed/superseded chunks are
+                # exactly what should surface, so don't penalize them.
+                penalty = 1.0
+            elif is_stale_law:
+                label   = "superseded"
+                penalty = PENALTY["superseded"]
             else:
                 penalty = PENALTY.get(label, 0.80)
 
-            # Year-based filter: if cutoff_year set, exclude sections enacted after
-            if cutoff_year and enacted_year and enacted_year > cutoff_year:
-                penalty = min(penalty, 0.3)
-                label   = "superseded"
-
             penalized = chunk.rrf_score * penalty
-            is_valid  = label in ("active",) or historical_query
+
+            # A chunk is "valid" (eligible for the strict active-only list)
+            # when it's the law that actually applies to this query:
+            #   - chronologically impossible ("future") sections are NEVER
+            #     valid, regardless of intent — this is the fix for the
+            #     "before 2023" query returning BNS bug: the old code's
+            #     `label in ("active",) or historical_query` made
+            #     is_valid=True for EVERY chunk once historical_query was
+            #     True, silently defeating the cutoff exclusion above.
+            #   - otherwise, a historical query accepts any intrinsic label
+            #     (it deliberately wants amended/repealed/superseded law).
+            #   - otherwise, only the dataset's own "active" label counts.
+            if is_future_law:
+                is_valid = False
+            elif historical_query:
+                is_valid = True
+            else:
+                is_valid = (label == "active")
 
             results.append(ValidatedChunk(
                 chunk           = chunk,
@@ -113,9 +279,11 @@ class TemporalFilter:
         self,
         chunks: list[RetrievedChunk],
         intent: QueryIntent,
+        cutoff_year: int | None = None,
+        cutoff_date: "str | date | None" = None,
     ) -> list[ValidatedChunk]:
         """Strict filter: return only active sections, with warnings attached to rest."""
-        validated = self.filter(chunks, intent)
+        validated = self.filter(chunks, intent, cutoff_year=cutoff_year, cutoff_date=cutoff_date)
         active    = [v for v in validated if v.is_valid]
         # If too few active results, include amended ones with warnings
         if len(active) < 3:

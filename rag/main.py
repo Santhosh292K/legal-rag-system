@@ -371,9 +371,16 @@ class LegalRAGPipeline:
 
         # ── Stage 4: Temporal filter ──────────────────────────────────────────
         self._log("Stage 4: Temporal filter...")
+        if intent.cutoff_year is not None:
+            precision = f"date={intent.cutoff_date}" if intent.cutoff_date else f"year={intent.cutoff_year} (no month given — ambiguous within 2024, see intent_classifier.py)" if intent.cutoff_year == 2024 else f"year={intent.cutoff_year}"
+            self._log(f"  Cutoff detected: {precision} "
+                      f"(from {intent.cutoff_reason!r}) — excluding sections not yet in effect")
         if self.use_temporal:
-            validated = (self.t_filter.filter_active_only(raw_chunks, intent)
-                         if strict_temporal else self.t_filter.filter(raw_chunks, intent))
+            validated = (self.t_filter.filter_active_only(
+                             raw_chunks, intent, cutoff_year=intent.cutoff_year, cutoff_date=intent.cutoff_date)
+                         if strict_temporal else
+                         self.t_filter.filter(
+                             raw_chunks, intent, cutoff_year=intent.cutoff_year, cutoff_date=intent.cutoff_date))
         else:
             # Ablation: skip temporal filter — wrap raw chunks in ValidatedChunk stubs
             from pipeline.temporal_filter import ValidatedChunk
@@ -488,10 +495,27 @@ class LegalRAGPipeline:
                     # Exception` below and logged as "non-fatal". In
                     # practice that meant Rocchio feedback ALWAYS failed
                     # silently, on every query that reached this stage —
-                    # never once actually added a rescued section. True to
-                    # match validity_label="active" (temporal_filter.py's
-                    # own convention: is_valid = label in ("active",) or
-                    # historical_query).
+                    # never once actually added a rescued section.
+                    #
+                    # BUGFIX 2: this hardcoded validity_label="active" for
+                    # every feedback chunk, completely bypassing the Stage 4
+                    # temporal filter/cutoff check for this side channel — a
+                    # query pinned to "before 2023" that got BNS_103
+                    # correctly excluded at Stage 4 could still have it
+                    # smuggled back in here (Rocchio re-queries BM25 fresh,
+                    # with no act/date awareness). Drop any chronologically-
+                    # impossible candidate the same way Stage 4 does
+                    # (is_chronologically_future — same date-precise vs.
+                    # year-only logic, see temporal_filter.py) before
+                    # wrapping the rest as active.
+                    from pipeline.temporal_filter import is_chronologically_future
+                    fb_raw = [
+                        c for c in fb_raw
+                        if not is_chronologically_future(
+                            c.payload.get("effective_date"), c.enacted_year,
+                            intent.cutoff_year, intent.cutoff_date,
+                        )
+                    ]
                     fb_valid = [
                         _VC(chunk=c, is_valid=True, validity_label="active",
                             warning="", penalized_score=c.score)
@@ -536,6 +560,19 @@ class LegalRAGPipeline:
                     structurer       = self.structurer,
                     max_kg_additions = 4,
                     hops             = 1,
+                    # BUGFIX: kg_augment_ranked used to fetch KG-expanded
+                    # sections straight from Qdrant and stamp them
+                    # validity_label="active" unconditionally — bypassing
+                    # Stage 4's temporal filter entirely. The KG's own
+                    # SUPERSEDES edge (IPC_302 -> BNS_103, by design — see
+                    # legal_kg.py's own CLI smoke test) meant a "before
+                    # 2023" query that had BNS correctly excluded at Stage 4
+                    # got it re-added right back here. Pass the same
+                    # cutoff so KG additions honor it too (cutoff_date for
+                    # date precision when the query gave one — see
+                    # is_chronologically_future's module note).
+                    cutoff_year      = intent.cutoff_year,
+                    cutoff_date      = intent.cutoff_date,
                 )
                 added_kg = len(ranked) - n_before
                 if added_kg:

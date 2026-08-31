@@ -55,6 +55,16 @@ def build_payload(record: dict) -> dict:
         "keywords":         m.get("keywords") or [],
         "status":           m["temporal"]["status"] or "active",
         "enacted_year":     m["temporal"]["enacted_year"],
+        # Bug fix: effective_date was never copied into the payload either,
+        # same class of bug as superseded_by/supersedes below — it's present
+        # in final_dataset.json (e.g. BNS/BNSS/BSA's "2024-07-01") but every
+        # retrieval-side consumer only ever saw enacted_year. That's a whole
+        # calendar year coarser than the real IPC/CRPC/IEA -> BNS/BNSS/BSA
+        # changeover, which happened mid-2024 — see
+        # pipeline/temporal_filter.py's is_chronologically_future. Re-index
+        # after this change for date-precise cutoff comparisons to take
+        # effect (falls back to enacted_year-only precision until then).
+        "effective_date":   m["temporal"].get("effective_date") or "",
         "last_amended":     m["temporal"]["last_amended"] or "",
         "amended_by":       m["temporal"]["amended_by"] or [],
         # Bug fix: these two were never copied into the payload, so

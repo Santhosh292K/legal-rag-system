@@ -14,6 +14,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from pipeline.chunk_structurer import StructuredChunk
 from pipeline.intent_classifier import QueryIntent
+from pipeline.temporal_filter import PENALTY as _VALIDITY_PENALTY
 from data.bm25_tokenizer import tokenize as _bm25_tokenize
 
 from config import OLLAMA_FAST_MODEL, RERANKER_MODEL, IRAC_WEIGHTS, RERANK_TOP_K
@@ -331,6 +332,26 @@ class IRACReranker:
             llm_done = []
 
         all_ranked = llm_done + rest
+
+        # BUGFIX: chunk.penalized_score (Stage 4's temporal-validity penalty
+        # — see temporal_filter.py) was computed and threaded all the way
+        # through StructuredChunk but never once READ here — this stage
+        # re-ranks purely by textual/semantic match to the query, with zero
+        # weight given to how valid/current a section actually is. Harmless
+        # for the common case (filter_active_only's default output is all
+        # penalty=1.0 "active"/historically-valid chunks), but its own
+        # "fewer than 3 valid results -> rescue amended sections" fallback
+        # deliberately lets a penalty=0.70 AMENDED section back in — and
+        # without this, that section competed for the final answer on pure
+        # text overlap, exactly as if it weren't amended at all. Re-derive
+        # the penalty ratio from validity_label (penalized_score itself is
+        # RRF-scaled, not on final_score's ~0-1 scale, so it can't be
+        # multiplied in directly) and apply it once, after all blending, so
+        # it can't get diluted by being applied before the LLM/cross-encoder
+        # stages average it back out.
+        for rc in all_ranked:
+            rc.final_score *= _VALIDITY_PENALTY.get(rc.chunk.validity_label, 1.0)
+
         all_ranked.sort(key=lambda x: x.final_score, reverse=True)
 
         # Always include direct-hit chunks (explicit section references like "ipc 1")

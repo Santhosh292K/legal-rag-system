@@ -436,6 +436,8 @@ def kg_augment_ranked(
     max_kg_additions: int  = 4,
     edge_types:       set  | None = None,
     hops:             int  = 1,
+    cutoff_year:      int  | None = None,
+    cutoff_date:      str  | None = None,
 ) -> list:
     """
     Stage 6.75 — KG-augmented ranked list expansion.
@@ -443,6 +445,16 @@ def kg_augment_ranked(
     Takes the top-ranked sections, expands them via the KG, fetches the
     novel sections from Qdrant (via structurer), and appends them to the
     ranked list at a discounted score of 0.30.
+
+    cutoff_year: same meaning as TemporalFilter's — the latest year a
+    provision could have been enacted and still apply to the query (e.g.
+    "before 2023" -> 2022). BUGFIX: this used to fetch KG-expanded sections
+    straight from Qdrant and stamp them validity_label="active"
+    unconditionally, bypassing Stage 4's temporal filter entirely — the
+    KG's own SUPERSEDES edge (IPC -> BNS, by design) could silently
+    re-inject a section a "before 2023" query had already correctly
+    excluded. When cutoff_year is set, any candidate enacted after it is
+    skipped instead of added.
 
     Returns the augmented ranked list.
     """
@@ -477,6 +489,21 @@ def kg_augment_ranked(
         meta  = record.get("meta", {})
         irac  = meta.get("irac", {})
         hier  = meta.get("hierarchy", {})
+
+        # Chronological check (see cutoff_year docstring above): skip a KG
+        # addition that could not possibly have applied to the query's own
+        # date instead of blindly stamping it "active". Uses the same
+        # date-precise-when-available check as Stage 4 and the Rocchio
+        # merge (is_chronologically_future) rather than a bare enacted_year
+        # comparison, so a mid-2024 changeover query resolves consistently
+        # across all three places a chunk can enter the ranked list.
+        temporal_meta = meta.get("temporal") or {}
+        from pipeline.temporal_filter import is_chronologically_future
+        if is_chronologically_future(
+            temporal_meta.get("effective_date"), temporal_meta.get("enacted_year"),
+            cutoff_year, cutoff_date,
+        ):
+            continue
 
         from pipeline.chunk_structurer import StructuredChunk
         sc = StructuredChunk(

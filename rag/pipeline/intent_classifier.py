@@ -33,6 +33,7 @@ IPC-flavoured scenario can still get a confident act_hint.
 """
 import re
 import json
+from datetime import date
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -57,6 +58,26 @@ class QueryIntent:
     # against the CLOSEST matching label rather than a single global label.
     labels:     list[str] = field(default_factory=list)
     source:     str       = "rule"   # "rule" | "semantic" | "llm" — which tier answered
+    # Gap: temporal cutoff. `temporal` above is a coarse historical/current/
+    # comparative/unspecified LABEL — it never told the temporal filter WHEN.
+    # A query like "a theft that happened in 2019" or "before BNS came into
+    # force" names an actual point in time that determines which of IPC
+    # (pre-2024) vs BNS (enacted 2023, effective 2024-07-01) applies, but
+    # nothing extracted that year anywhere — TemporalFilter.filter()'s
+    # cutoff_year parameter existed but no caller ever computed one, so it
+    # was always None and the year-based exclusion branch was dead code.
+    # cutoff_year is the latest year a provision could have been enacted and
+    # still have governed the query's incident (None = no date found).
+    cutoff_year:   int | None = None
+    # cutoff_date (ISO 'YYYY-MM-DD'): set only when the query gives
+    # day/month precision, not just a bare year. Matters because BNS/BNSS/
+    # BSA took effect mid-year (2024-07-01) — "a theft in January 2024" is
+    # unambiguously pre-BNS, but collapsing it to just cutoff_year=2024
+    # can't tell that apart from "a theft in December 2024" (post-BNS).
+    # cutoff_year alone is the best available answer for a genuinely
+    # date-less "2024" — see intent_classifier.py's _extract_cutoff.
+    cutoff_date:   str | None = None
+    cutoff_reason: str        = ""
 
 
 # ── Small, closed-vocabulary literal act abbreviations ──────────────────────
@@ -130,8 +151,22 @@ INTENT_EXAMPLES = {
 }
 
 TEMPORAL_RULES = {
+    # BUGFIX: the historical list used to include a bare
+    # `was|were|had|used to|earlier` alternation — ordinary past-tense
+    # English, not a signal about which law-era applies. Virtually every
+    # real case narrative ("the accused WAS arrested...", "she HAD filed a
+    # complaint...") is written in the past tense, so this tripped
+    # temporal="historical" on most real queries even with zero date
+    # mentioned anywhere. That mattered a lot downstream: TemporalFilter's
+    # `is_valid = ... or historical_query` (both the old code and — for
+    # chunks that aren't chronologically future — the current code) treats
+    # a historical query as "accept every validity label", so the supposedly
+    # "strict active-only" filter silently did nothing for most queries,
+    # letting amended/repealed/whatever-matched-by-meaning sections straight
+    # through unfiltered. Kept only the patterns that are actually specific
+    # to wanting OLD/pre-BNS law, not just past-tense narration.
     "historical": [
-        r"\b(was|were|had|used to|earlier|before\s+\d{4}|old law)\b",
+        r"\bbefore\s+\d{4}\b", r"\bold\s+law\b",
         r"\b(before\s+(bns|bnss|bsa)\b)",
         r"\b(ipc|crpc|iea)\s+(before|prior|replaced|superseded)\b",
         r"\b(replaced|superseded)\s+by\s+(bns|bnss|bsa)\b",
@@ -140,7 +175,17 @@ TEMPORAL_RULES = {
         r"\bwhen\s+(ipc|crpc)\s+was\s+in\s+force\b",
     ],
     "current": [
-        r"\b(current|now|today|present|latest|2023|2024|2025|new law)\b",
+        # BUGFIX: this used to hardcode "2023|2024|2025" as "current"
+        # signal words. Two problems: (1) it goes stale by construction —
+        # already missing 2026 as of this writing, and needs indefinite
+        # manual upkeep; (2) it fought directly with cutoff extraction
+        # below — "a murder happened in 2024" was mislabeled
+        # temporal="current" purely because "2024" is in this list, even
+        # though the query is unambiguously describing a PAST incident.
+        # Genuine "current law" intent is relative ("current", "now",
+        # "still in force", ...), never a specific calendar year — a
+        # specific year is exactly what cutoff extraction below is for.
+        r"\b(current|now|today|present|latest|new law)\b",
         r"\b(bns|bnss|bsa)\s+(now|currently|today|replaced|enacted)\b",
         r"\bstill\s+in\s+force\b",
         r"\bis\s+(ipc|crpc|ipc\s+\d+)\s+still\b",
@@ -156,6 +201,22 @@ TEMPORAL_RULES = {
     ],
 }
 
+# BNS, BNSS and BSA all took effect 2024-07-01 (final_dataset.json's own
+# effective_date field — see is_chronologically_future's module note in
+# temporal_filter.py; also matches the actual notified date). A query that
+# names this changeover qualitatively ("under the OLD IPC", "before BNS")
+# without giving a specific year still deserves a precise cutoff — this is
+# that one well-established constant, not a per-query guess.
+_BNS_CHANGEOVER = date(2024, 7, 1)
+_PRE_BNS_PHRASE_RE = re.compile(
+    r"\bbefore\s+(?:bns|bnss|bsa)\b"
+    r"|\b(?:ipc|crpc|iea)\s+(?:before|prior|replaced|superseded)\b"
+    r"|\b(?:replaced|superseded)\s+by\s+(?:bns|bnss|bsa)\b"
+    r"|\bunder\s+(?:the\s+)?old\s+(?:ipc|crpc|penal\s+code)\b"
+    r"|\bpre[- ]bns\b"
+    r"|\bwhen\s+(?:ipc|crpc)\s+was\s+in\s+force\b"
+)
+
 INTENT_EXAMPLES_PATH = str(
     Path(__file__).parent.parent / "data" / "intent_examples.json"
 )
@@ -169,6 +230,143 @@ def _detect_temporal(q_lower: str) -> str:
         if any(re.search(p, q_lower) for p in t_patterns):
             return t_label
     return "unspecified"
+
+
+# ── Cutoff-date/year extraction ─────────────────────────────────────────────
+# TEMPORAL_RULES above only classifies the query into a coarse bucket
+# (historical/current/comparative/unspecified) and never looks at *which*
+# date. "before 2023", "an FIR filed in 2019", "a theft in January 2024" all
+# name an actual point in time — the thing that determines whether IPC/CRPC/
+# IEA or their July-2024 successors BNS/BNSS/BSA govern.
+#
+# BUGFIX: an earlier version of this only ever captured a bare YEAR, even
+# when the query gave a full date ("occurred on 15 March 2020" only kept
+# "2020"). That's harmless for any year outside 2024 (BNS/BNSS/BSA were all
+# enacted 2023, so whole-year comparison already separates them cleanly from
+# IPC/CRPC/IEA) — but BNS/BNSS/BSA didn't take EFFECT until 2024-07-01, a
+# mid-year changeover, so "a theft in January 2024" (unambiguously pre-BNS)
+# and "a theft in December 2024" (unambiguously post-BNS) both collapsed to
+# the same cutoff_year=2024 and became indistinguishable. Now captures a
+# full date whenever the query gives one (day+month, or just month — see
+# _find_date_in), and only falls back to a bare year when it genuinely
+# doesn't (a plain "2024" with no month IS genuinely ambiguous re: the
+# July-2024 changeover — TemporalFilter treats that honestly rather than
+# guessing a side).
+_YEAR_RE = re.compile(r"\b(1[6-9]\d{2}|20[0-4]\d)\b")
+
+_MONTHS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+_MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))   # longest-first
+
+# "1 june 2024", "15th march, 2020"
+_DATE_DMY_RE = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_ALT})\.?,?\s+(\d{{4}})\b")
+# "june 1 2024", "march 15th, 2020"
+_DATE_MDY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b")
+# ISO numeric: 2024-06-01
+_DATE_ISO_RE = re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b")
+# Day-first numeric (Indian convention, matching how this dataset's own
+# CRPC/BNSS effective_date fields are written): 1/6/2024, 01-06-2024
+_DATE_DMY_NUM_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b")
+# Month + year, no day: "june 2024" — still resolves month-level precision
+# against a changeover date even without a day.
+_MONTH_YEAR_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{4}})\b")
+
+
+def _find_date_in(text: str):
+    """Look for an explicit day/month-bearing date in `text`. Does NOT fall
+    back to a bare year — callers gate that separately (see
+    _INCIDENT_WORD_RE below), since a bare year alone is a much weaker,
+    higher-false-positive signal than an actual date. Returns
+    (date_or_None, year_or_None, matched_text)."""
+    for rx, build in (
+        (_DATE_DMY_RE,     lambda m: date(int(m.group(3)), _MONTHS[m.group(2)], int(m.group(1)))),
+        (_DATE_MDY_RE,     lambda m: date(int(m.group(3)), _MONTHS[m.group(1)], int(m.group(2)))),
+        (_DATE_ISO_RE,     lambda m: date(int(m.group(1)), int(m.group(2)), int(m.group(3)))),
+        (_DATE_DMY_NUM_RE, lambda m: date(int(m.group(3)), int(m.group(2)), int(m.group(1)))),
+        (_MONTH_YEAR_RE,   lambda m: date(int(m.group(2)), _MONTHS[m.group(1)], 1)),
+    ):
+        m = rx.search(text)
+        if m:
+            try:
+                d = build(m)
+                return d, d.year, m.group(0)
+            except ValueError:
+                continue   # e.g. day 32 — not a real date, try the next pattern
+    return None, None, ""
+
+
+# "before/prior to/until 2023" -> the incident predates 2023, so the cutoff
+# is the day/year BEFORE it (2023 itself may not yet have been in force).
+_EXCLUSIVE_TRIGGER_RE = re.compile(
+    r"\b(?:before|prior to|preceding|earlier than|until|till)\b"
+)
+# "in/on/during/dated 2020" or a bare year right next to it -> the incident
+# IS anchored to that year, so the cutoff is that date/year itself (inclusive).
+_INCLUSIVE_TRIGGER_RE = re.compile(
+    r"\b(?:in|on|during|as of|dated|back in|around|circa|of)\b"
+)
+# A bare year only counts as an incident date (not, say, the "1860" in
+# "IPC, 1860" or the "2023" in "BNS 2023") when it sits near a word that
+# actually describes an event happening — otherwise plenty of legal
+# queries would trip a spurious cutoff just for naming an act's year.
+_INCIDENT_WORD_RE = re.compile(
+    r"\b(?:case|incident|fir|complaint|crime|offence|offense|happened|"
+    r"occurred|committed|took place|filed|arrested|accused)\b"
+)
+
+
+def _extract_cutoff(q_lower: str, window: int = 40) -> tuple:
+    """Find the date/year anchoring the query to a point in time. Returns
+    (cutoff_date: date|None, cutoff_year: int|None, matched_text).
+    cutoff_date is set only when the query gave day/month precision (see
+    module note above for why bare-year isn't just rounded to Jan 1);
+    cutoff_year is always set whenever cutoff_date is (its own year), and
+    may be set alone when only a bare year was found."""
+    from datetime import timedelta
+
+    # 1) Exclusive trigger ("before"/"prior to"/...) — look for a date or
+    #    year right after it.
+    m = _EXCLUSIVE_TRIGGER_RE.search(q_lower)
+    if m:
+        tail = q_lower[m.end(): m.end() + window]
+        full_date, year, matched = _find_date_in(tail)
+        if full_date is not None:
+            return full_date - timedelta(days=1), full_date.year, f"{m.group(0)} {matched}"
+        ym = _YEAR_RE.search(tail)
+        if ym:
+            return None, int(ym.group(1)) - 1, f"{m.group(0)} {ym.group(0)}"
+
+    # 2) An explicit day/month-bearing date ANYWHERE is a strong, low-false-
+    #    positive signal on its own — acts are never cited with a month
+    #    name or a D/M/Y numeric date — so it doesn't need the incident-word
+    #    gating that a bare year needs below.
+    full_date, year, matched = _find_date_in(q_lower)
+    if full_date is not None:
+        return full_date, full_date.year, matched
+
+    # 3) Bare year: only near an incident word or inclusive trigger.
+    for ym in _YEAR_RE.finditer(q_lower):
+        yr = int(ym.group(1))
+        lo, hi = max(0, ym.start() - window), min(len(q_lower), ym.end() + window)
+        context = q_lower[lo:hi]
+        preceding = q_lower[max(0, ym.start() - 8): ym.start()]
+        if _INCIDENT_WORD_RE.search(context) or _INCLUSIVE_TRIGGER_RE.search(preceding):
+            return None, yr, context.strip()
+
+    # 4) Qualitative pre-BNS phrasing with no year at all ("under the old
+    #    IPC", "before BNS was enacted") still names a real point in time —
+    #    the day before the known 2024-07-01 changeover.
+    pm = _PRE_BNS_PHRASE_RE.search(q_lower)
+    if pm:
+        from datetime import timedelta
+        cutoff = _BNS_CHANGEOVER - timedelta(days=1)
+        return cutoff, cutoff.year, pm.group(0)
+
+    return None, None, ""
 
 
 def _detect_act_hint_literal(q_lower: str) -> tuple[str | None, dict[str, int]]:
@@ -327,22 +525,45 @@ class IntentClassifier:
     def classify(self, query: str) -> QueryIntent:
         fast = rule_based_classify(query)
         if fast.confidence >= self.RULE_ACCEPT_THRESHOLD:
-            return fast
+            result = fast
+        else:
+            semantic = semantic_classify(
+                query, self._intent_matcher, self._act_matcher, fast.temporal,
+            )
+            if semantic and semantic.confidence >= self.SEMANTIC_ACCEPT_THRESHOLD:
+                # Literal act hint (if any) is more precise than the embedding
+                # guess, so prefer it when both are available.
+                if fast.act_hint and not semantic.act_hint:
+                    semantic.act_hint = fast.act_hint
+                result = semantic
+            else:
+                try:
+                    result = llm_classify(query)
+                except Exception:
+                    result = semantic or fast
 
-        semantic = semantic_classify(
-            query, self._intent_matcher, self._act_matcher, fast.temporal,
-        )
-        if semantic and semantic.confidence >= self.SEMANTIC_ACCEPT_THRESHOLD:
-            # Literal act hint (if any) is more precise than the embedding
-            # guess, so prefer it when both are available.
-            if fast.act_hint and not semantic.act_hint:
-                semantic.act_hint = fast.act_hint
-            return semantic
-
-        try:
-            return llm_classify(query)
-        except Exception:
-            return semantic or fast
+        # Cutoff extraction runs regardless of which tier answered — it's a
+        # deterministic regex pass over the raw query text, not something
+        # any of the three classification tiers computes on their own.
+        # See _extract_cutoff's docstring.
+        cutoff_date, cutoff_year, cutoff_reason = _extract_cutoff(query.lower())
+        if cutoff_year is not None:
+            result.cutoff_year   = cutoff_year
+            result.cutoff_date   = cutoff_date.isoformat() if cutoff_date else None
+            result.cutoff_reason = cutoff_reason
+            # BUGFIX: this used to only fill in when temporal=="unspecified"
+            # — but TEMPORAL_RULES's "current" list used to hardcode
+            # "2023|2024|2025" (fixed above), so a query naming an actual
+            # past date could ALSO trip that "current" keyword match (e.g.
+            # "a murder happened in 2024" hit both the extracted-cutoff path
+            # here AND the literal "2024" in the current-list, landing on
+            # temporal="current" — the wrong label for a query describing a
+            # past incident). An explicit extracted date/year is a more
+            # specific, deliberate signal than a coincidental keyword hit,
+            # so it always wins, overriding whatever the regex/semantic/LLM
+            # tier guessed — not just when they came back "unspecified".
+            result.temporal = "historical"
+        return result
 
 
 if __name__ == "__main__":

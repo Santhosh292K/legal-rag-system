@@ -138,6 +138,23 @@ class ChunkStructurer:
                         "issue_tags":     p.get("issue_tags", []),
                         "conclusion_type":p.get("conclusion_type", ""),
                     },
+                    # BUGFIX: this reconstructed record was missing
+                    # meta.temporal entirely — the in-memory (final_dataset.
+                    # json) fallback path below has it nested exactly like
+                    # this, but this Qdrant path (the one actually used at
+                    # runtime, since main.py always passes a shared client)
+                    # silently dropped it. legal_kg.py's kg_augment_ranked
+                    # reads meta["temporal"]["enacted_year"] off records
+                    # fetched through this exact method to decide whether a
+                    # KG-expanded section is chronologically eligible for a
+                    # cutoff_year query — without this it always evaluated
+                    # to None and the check quietly did nothing.
+                    "temporal": {
+                        "enacted_year":   p.get("enacted_year"),
+                        "effective_date": p.get("effective_date") or None,
+                        "status":         p.get("status", "active"),
+                        "superseded_by":  p.get("superseded_by") or None,
+                    },
                 },
             }
         except Exception:
