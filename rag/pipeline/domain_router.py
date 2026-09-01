@@ -72,6 +72,23 @@ MISSING_ACTS = {
     # does for NI/MCA/GST, instead of the gap being invisible.
     "CLPRA": "Child Labour (Prohibition and Regulation) Act, 1986",
     "FA":    "Factories Act, 1948 (working conditions, hazardous processes)",
+    # Gap: a "domestic violence" query IS correctly answerable from this
+    # corpus for its PUNITIVE half (cruelty/dowry-death: IPC 498A/304B,
+    # now BNS 85/80) — but the actual dedicated Protection of Women from
+    # Domestic Violence Act, 2005 (civil protection/residence/monetary-
+    # relief orders, not criminal punishment) genuinely isn't indexed, and
+    # nothing surfaced that gap before this. Safe to flag now that
+    # answer_generator.py's cautious prompt judges for itself whether the
+    # retrieved sections substantively answer the query before deciding
+    # whether to lead with this disclaimer or fold it in as a secondary
+    # note — this used to unconditionally lead with it (see that file's
+    # ANSWER_PROMPT_CAUTIOUS BUGFIX note), which is exactly why this entry
+    # was never added: it would have made a correct BNS 85/304B answer
+    # open with "this database doesn't cover domestic violence" instead.
+    "PWDVA": "Protection of Women from Domestic Violence Act, 2005 "
+             "(civil protection/residence/monetary-relief orders — distinct "
+             "from the criminal cruelty/dowry-death punishment sections this "
+             "database does have)",
 }
 
 
@@ -414,6 +431,14 @@ MISSING_ACT_SIGNALS = {
               r"\b(working\s+conditions?|workplace\s+safety|industrial\s+safety)\b",
               r"\b(hazardous\s+process|occupational\s+(health|hazard|injury)|workplace\s+injury)\b",
               r"\b(factory\s+(worker|inspector|licen[cs]e)|working\s+hours\s+in\s+a\s+factory)\b"],
+    # Broad on purpose (bare "domestic violence" included) — see the
+    # PWDVA note in MISSING_ACTS above for why this is now safe to flag
+    # even on queries the corpus DOES have a direct punitive answer for.
+    "PWDVA": [r"\bdomestic\s+violence\s+act\b|\bpwdva\b|"
+              r"\bprotection\s+of\s+women\s+from\s+domestic\s+violence\b",
+              r"\bdomestic\s+violence\b",
+              r"\b(protection\s+order|residence\s+order|monetary\s+relief)\b"
+              r".{0,40}\b(domestic|marriage|spouse|husband|wife)\b"],
 }
 
 

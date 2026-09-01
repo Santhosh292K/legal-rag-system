@@ -74,27 +74,55 @@ Answer directly and factually using the section content above:"""
 # knows a specific act central to this query isn't in the database at all
 # (domain_router's regex signals / universal_translator's LLM-flagged
 # gaps — see main.py's `all_gaps`), or (b) retrieval quality itself is
-# weak (LOW_RELEVANCE_THRESHOLD). ANSWER_PROMPT's "trust it completely /
-# never express uncertainty" rules are right when retrieval actually
+# weak (LOW_RELEVANCE_THRESHOLD, now measured off the best few candidates
+# — see generate()'s weak_retrieval). ANSWER_PROMPT's "trust it completely
+# / never express uncertainty" rules are right when retrieval actually
 # found the answer, but applied unconditionally they forced the model to
 # confidently answer e.g. "the punishment for child labour is X" using
 # only tangentially-related sections (child kidnapping/trafficking, not
 # child *employment* law) — correct-sounding, wrong. This variant is
 # explicitly allowed, and instructed, to say so instead of stretching a
 # weak match to fit.
+#
+# BUGFIX: this used to instruct the model to lead with the KNOWN GAPS
+# disclaimer UNCONDITIONALLY whenever known_gaps was non-empty, with no
+# instruction to first check whether the retrieved sections actually
+# answer the question anyway. A "domestic violence... dowry" query
+# correctly flags the dedicated Protection of Women from Domestic
+# Violence Act as a gap (it genuinely isn't indexed) — but the CRIMINAL
+# PUNISHMENT the query actually asked about has always been governed by
+# IPC 498A/304B (now BNS 85/80), which this database DOES have and did
+# retrieve. The model dutifully opened with "this database does not
+# contain specific sections... that directly addresses domestic violence"
+# and then went on to correctly cite exactly the sections that do — a
+# self-contradicting answer. A section under a differently-named act is
+# still the direct, correct legal answer, not a "related" one, and the
+# prompt now asks the model to make that call itself before choosing
+# which framing to use, rather than always leading with the disclaimer.
 ANSWER_PROMPT_CAUTIOUS = """You are a precise legal assistant specializing in Indian law.
 You will be given legal sections retrieved from a database, for a query where either
 retrieval confidence is LOW or a law the query is really about is KNOWN to be missing
 from this database entirely (see KNOWN GAPS below).
 
 CRITICAL RULES:
-- If KNOWN GAPS names an act that is what this query is actually asking about, say so
-  plainly as your FIRST sentence — e.g. "This database does not include the {{act}},
-  so it cannot answer this directly." Lead with it; don't bury it after a long answer.
-- Only after that: if the Retrieved Legal Sections below are genuinely related (e.g.
-  cover related conduct from a different angle), present them as RELATED provisions —
-  not as the direct answer. Do not phrase content from a section about a different
-  offence as if it were "the punishment for X" when the query asked about X specifically.
+- First, judge for yourself whether the Retrieved Legal Sections below actually,
+  substantively answer the query — state the specific rule/punishment/procedure asked
+  about, not just touch the same general topic. A section often lives under a
+  DIFFERENT act than a layperson would expect (e.g. "domestic violence" is usually
+  answered by cruelty/dowry-death provisions in the penal code, not a dedicated
+  Domestic Violence Act) — that is still a correct, DIRECT answer, even when KNOWN
+  GAPS also names a differently-titled act as missing.
+- If they DO substantively answer it: answer directly and confidently, exactly as you
+  would with no gap at all. Only add a brief closing note about a KNOWN GAPS act if it
+  would meaningfully change the answer (e.g. it covers a different remedy — a civil
+  protection order, say — that these sections don't). Do not lead with a disclaimer
+  that undersells a correct, on-point answer.
+- If they do NOT substantively answer it (only tangentially related — e.g. cover
+  related conduct from a different angle): THEN say so plainly as your FIRST sentence —
+  e.g. "This database does not include the {{act}}, so it cannot answer this directly."
+  — and present what you found as RELATED provisions, not the direct answer. Do not
+  phrase content from a section about a different offence as if it were "the punishment
+  for X" when the query asked about X specifically.
 - Still cite every claim you do make with [SECTION_ID], and never invent a section or
   content not present below.
 - If none of the retrieved sections are meaningfully related to the query, say plainly
@@ -453,7 +481,24 @@ class AnswerGenerator:
             )
 
         top             = self._select_top(ranked, top_k)
-        avg_score       = sum(r.final_score for r in top) / len(top) if top else 0.0
+        # BUGFIX: this used to average final_score across ALL of `top` —
+        # every one of the up to FINAL_TOP_K=10 candidates about to be
+        # shown to the LLM, most of which are padding when (as is typical
+        # for a narrow query in this corpus) only 2-4 sections are
+        # genuinely relevant. That diluted average routinely fell under
+        # LOW_RELEVANCE_THRESHOLD even when the best few candidates were
+        # strong, which is exactly backwards for what this flag is meant
+        # to decide: "should we hedge, or is what we found good enough to
+        # answer confidently" is a question about the BEST matches, not
+        # the average of everything offered as padding. This is the
+        # pre-generation twin of the same fix already applied to
+        # _assess_confidence/_build_irac_summary (which average over what
+        # was actually CITED) — this one can't do that, since nothing has
+        # been cited yet at this point, so it uses the best few candidates
+        # by score instead as the next-best proxy for "what we actually
+        # found", rather than diluting across the whole padded context.
+        best            = sorted(top, key=lambda r: r.final_score, reverse=True)[:3]
+        avg_score       = sum(r.final_score for r in best) / len(best) if best else 0.0
         weak_retrieval  = avg_score < LOW_RELEVANCE_THRESHOLD
         use_cautious    = bool(known_gaps) or weak_retrieval
 
