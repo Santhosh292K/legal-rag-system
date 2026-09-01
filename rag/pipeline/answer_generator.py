@@ -363,19 +363,40 @@ class AnswerGenerator:
         (0.0 when citations weren't supplied) and used as a real, graded
         threshold in the medium band instead of a boolean "cited something"
         check.
+
+        BUGFIX 2: `avg` used to be computed over ALL of `top` — every one
+        of the up to FINAL_TOP_K candidates OFFERED to the LLM, not just
+        the ones it actually cited. For a narrow query this corpus doesn't
+        have 10 genuinely relevant sections for, the remaining slots get
+        filled with much weaker filler just to pad out the context window
+        — averaging over that filler could drag a genuinely solid 3-
+        citation answer down to "low" even though every citation it made
+        was good (observed directly: a domestic-violence/dowry query cited
+        3 correct BNS sections at final_score ~0.7-0.8 each, but 7 other
+        offered-and-correctly-ignored candidates at ~0.1 pulled the
+        average to 0.26 — "low", despite the answer being right). `avg` is
+        now computed over the CITED subset when citations exist (what the
+        answer actually relied on), falling back to the full offered set
+        only when there's nothing else to measure from (no citations at
+        all — e.g. the "no relevant sections" case).
         """
         if not ranked:
             return "low"
-        top    = self._select_top(ranked, top_k)
-        avg    = sum(r.final_score for r in top) / len(top)
+        top = self._select_top(ranked, top_k)
+
+        cited_ids = {c.section_id for c in citations} if citations else set()
+        scored    = [r for r in top if r.chunk.section_id in cited_ids] or top
+        avg       = sum(r.final_score for r in scored) / len(scored)
         retrieval_ok = avg >= 0.65
 
         # Citation recall gate (Gap 18) — always computed as a graded value,
         # 0.0 when citations weren't supplied, rather than short-circuiting
-        # to a boolean that always passes.
+        # to a boolean that always passes. Still measured against the FULL
+        # offered set (not just cited_ids) — recall is specifically "how
+        # much of what was offered got used", so it needs the full
+        # denominator; only `avg` above changes to the cited-only numerator.
         if citations is not None:
             offered_ids  = {r.chunk.section_id for r in top}
-            cited_ids    = {c.section_id for c in citations}
             recall       = len(cited_ids & offered_ids) / max(len(offered_ids), 1)
         else:
             recall       = 0.0
@@ -387,10 +408,20 @@ class AnswerGenerator:
             return "medium"
         return "low"
 
-    def _build_irac_summary(self, ranked: list[RankedChunk], top_k: int) -> dict:
+    def _build_irac_summary(
+        self, ranked: list[RankedChunk], top_k: int,
+        citations: list | None = None,
+    ) -> dict:
+        # Same fix as _assess_confidence's BUGFIX 2: average over what was
+        # actually cited, not every candidate offered — otherwise these
+        # "coverage" bars read as uniformly bad for any answer that (quite
+        # correctly) ignored most of a padded-out top_k, even when the
+        # sections it did cite were a strong match.
         top = self._select_top(ranked, top_k)
         if not top:
             return {}
+        cited_ids = {c.section_id for c in citations} if citations else set()
+        top = [r for r in top if r.chunk.section_id in cited_ids] or top
         return {
             "issue_coverage":   round(sum(r.issue_score       for r in top) / len(top), 2),
             "rule_coverage":    round(sum(r.rule_score        for r in top) / len(top), 2),
@@ -454,7 +485,7 @@ class AnswerGenerator:
         # being present doesn't mean they were the right ones.
         if known_gaps and weak_retrieval:
             confidence = "low"
-        irac_sum   = self._build_irac_summary(ranked, top_k)
+        irac_sum   = self._build_irac_summary(ranked, top_k, citations=citations)
         # Gap 23: capture the actual reranker top-K section IDs (not just
         # what the LLM cited) so the evaluator can measure true retrieval recall.
         #
