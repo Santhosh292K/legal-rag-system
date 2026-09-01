@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
-from data.bm25_tokenizer import tokenize as _tokenize
+from data.bm25_tokenizer import tokenize as _tokenize, build_search_text
 
 HERE        = Path(__file__).parent
 VOCAB_PATH  = HERE / "bm25_vocab.json"
@@ -55,10 +55,16 @@ def main():
     df = [0] * len(vocab)
 
     for rec in records:
-        # embedding_text is the richer field (includes section/act name +
-        # keywords), matching what the vocab was almost certainly built
-        # from; fall back to content if it's ever missing.
-        text = rec.get("embedding_text") or rec.get("content", "")
+        # BUGFIX: this comment used to claim embedding_text already
+        # includes keywords — it doesn't (verified directly against
+        # final_dataset.json), so this was silently computing document
+        # frequency over a narrower text than what a fixed indexer.py now
+        # actually builds the vocab from. build_search_text is the single
+        # shared definition of "the text a record is indexed on" — see its
+        # docstring in bm25_tokenizer.py — used identically here and in
+        # data/indexer.py so query-side IDF (this file's output) and
+        # corpus-side vectors (indexer.py's) agree on the same vocabulary.
+        text = build_search_text(rec)
         for tok in tokenize(text):
             idx = vocab.get(tok)
             if idx is not None:

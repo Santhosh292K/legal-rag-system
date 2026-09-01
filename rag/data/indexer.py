@@ -29,7 +29,7 @@ from config import (
     QDRANT_PATH, COLLECTION_NAME,
     EMBEDDING_MODEL, EMBEDDING_DIM,
 )
-from data.bm25_tokenizer import tokenize
+from data.bm25_tokenizer import tokenize, build_search_text
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -152,8 +152,14 @@ class LegalIndexer:
         self._setup_collection()
 
         # Build vocab (once, not per-record)
+        # BUGFIX: was `[r["embedding_text"] for r in records]` — see
+        # build_search_text's docstring (data/bm25_tokenizer.py). Every
+        # record's hand-curated meta.keywords (e.g. IPC_498A tagged
+        # "domestic violence") never made it into embedding_text, so that
+        # bridge vocabulary never reached the BM25 vocab or dense
+        # embeddings at all — only the Qdrant payload, for display.
         print("Building BM25 vocabulary...")
-        all_texts        = [r["embedding_text"] for r in records]
+        all_texts        = [build_search_text(r) for r in records]
         tokenized_corpus = [tokenize(t) for t in all_texts]
         vocab            = build_vocab(all_texts)
         print(f"Vocabulary size: {len(vocab)}")
@@ -194,8 +200,11 @@ class LegalIndexer:
 
         for i, record in enumerate(tqdm(records, desc="Indexing")):
             try:
-                # Dense vector
-                dense_vec = self._embed_batch([record["embedding_text"]])[0]
+                # Dense vector — same keyword-enriched text as the BM25
+                # vocab above (see build_search_text), not the bare
+                # embedding_text; reuse the copy already computed there
+                # rather than rebuilding it per record.
+                dense_vec = self._embed_batch([all_texts[i]])[0]
 
                 # BM25-style sparse vector: TF(this doc) * IDF(corpus-wide)
                 tokens = tokenized_corpus[i]
@@ -280,7 +289,7 @@ if __name__ == "__main__":
         print(f"[indexer] Rebuilding BM25 vocabulary from {args.json_path} ...")
         with open(args.json_path, "r", encoding="utf-8") as f:
             records = json.load(f)
-        all_texts = [r["embedding_text"] for r in records]
+        all_texts = [build_search_text(r) for r in records]
         vocab = build_vocab(all_texts)
         vocab_path = Path(args.json_path).parent / "bm25_vocab.json"
         with open(vocab_path, "w") as vf:

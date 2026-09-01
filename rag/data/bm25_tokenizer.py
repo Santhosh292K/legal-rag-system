@@ -102,3 +102,43 @@ def tokenize(text: str) -> list[str]:
     needed."""
     tokens = _TOKEN_RE.findall(text.lower())
     return [_US_TO_UK.get(t, t) for t in tokens]
+
+
+def build_search_text(record: dict) -> str:
+    """The text actually used for BOTH BM25 vocabulary/sparse-vector
+    construction AND dense embedding — by data/indexer.py at index time and
+    data/build_bm25_idf.py for document-frequency counting, so the two stay
+    consistent with each other and with what pipeline/hybrid_retriever.py's
+    query side searches against.
+
+    BUGFIX: every record carries a hand-curated `meta.keywords` list
+    specifically meant to bridge lay-language query vocabulary to the
+    section's actual (often narrower/older) statutory wording — e.g.
+    IPC_498A ("Husband or relative of husband subjecting a woman to
+    cruelty...") is tagged with the keyword "domestic violence", a phrase
+    that never appears anywhere in the section's own text. But indexer.py
+    only ever built the BM25 vocab and dense embeddings from
+    record["embedding_text"] — which does NOT include keywords (verified
+    directly against final_dataset.json: IPC_498A's embedding_text is just
+    the act/section header + content, no keyword list) — so that curated
+    bridge vocabulary was copied into the Qdrant payload for display/
+    filtering only and never once influenced retrieval. A query using
+    "domestic violence" (the dataset's own suggested vocabulary for this
+    exact section) had no lexical anchor to IPC_498A at all and had to
+    clear the bar on dense semantic similarity alone — which it did not,
+    in production, even though a same-topic query using "dowry" (a word
+    that DOES appear in the section's own text) retrieved it easily.
+    build_bm25_idf.py's own old comment ("embedding_text is the richer
+    field (includes ... keywords)") already assumed this was true; it
+    wasn't, until now.
+
+    Appends keywords to embedding_text/content for indexing purposes only
+    — does not mutate the record, so record["embedding_text"] still stores
+    the clean act/section/content text wherever it's used for display.
+    """
+    meta     = record.get("meta") or {}
+    keywords = meta.get("keywords") or []
+    base     = record.get("embedding_text") or record.get("content", "")
+    if not keywords:
+        return base
+    return f"{base} {' '.join(keywords)}"
