@@ -56,11 +56,11 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
     (r"\b(extort\w*|extract\w*\s+money|protection\s+money|"
      r"regular\s+payment\w*\s+under\s+threat|pay\w*\s+or\s+(else|face))\b",
      "extortion putting person in fear of injury dishonestly inducing "
-     "delivery of property IPC 383 384 385 386 387"),
+     "delivery of property IPC 383 IPC 384 IPC 385 IPC 386 IPC 387"),
     (r"\b(beat|hit|assault\w*|attack\w*|stab\w*)\w*\b",
-     "voluntarily causing hurt grievous hurt assault IPC 323 324 325"),
+     "voluntarily causing hurt grievous hurt assault IPC 323 IPC 324 IPC 325"),
     (r"\bkilled?\b",
-     "murder culpable homicide IPC 300 302 304"),
+     "murder culpable homicide IPC 300 IPC 302 IPC 304"),
 
     # Fake credentials / impersonation / forged documents — merged so that
     # "forged certificate", "fake deed", "falsified diploma" etc. all match,
@@ -73,17 +73,17 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
     (r"\b(fake|bogus|forged?|fabricated?|falsified?)\s+(\w+\s+){0,2}"
      r"(degree|certificate|diploma|licen[cs]e|document|signature|will|deed|record)\b",
      "forged false document forgery for the purpose of cheating "
-     "dishonestly inducing delivery of property IPC 463 464 468 415 420"),
+     "dishonestly inducing delivery of property IPC 463 IPC 464 IPC 468 IPC 415 IPC 420"),
     (r"\b(fake|bogus|false)\s+(doctor|physician|engineer|lawyer|officer|professional)\b",
-     "cheating personation IPC 415 416 419"),
+     "cheating personation IPC 415 IPC 416 IPC 419"),
     (r"\bpracticed?\s+(medicine|law|engineering)\s+without\s+(licence|degree|registration)\b",
-     "personation cheating false pretence IPC 416 419 420"),
+     "personation cheating false pretence IPC 416 IPC 419 IPC 420"),
 
     # Police / public servant
     (r"\bpolice\s+(beat|tortured?|assaulted?|thrashed?)\b",
-     "public servant causing hurt wrongful confinement IPC 330 342 166"),
+     "public servant causing hurt wrongful confinement IPC 330 IPC 342 IPC 166"),
     (r"\bwrongful\s+(arrest|detention|confinement)\b",
-     "wrongful confinement illegal arrest IPC 340 342 344 166"),
+     "wrongful confinement illegal arrest IPC 340 IPC 342 IPC 344 IPC 166"),
     (r"\b(police|officer)\s+(bribed?|took\s+money|corrupt)\b",
      "public servant gratification bribery PCA 13 IPC 161"),
     # diagnose_recall.py showed PCA_013 (criminal misconduct) still missing
@@ -94,7 +94,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
     (r"\bdemand\w*\s+(a\s+)?bribe\b",
      "public servant gratification bribery demand criminal misconduct "
      "obtains valuable thing pecuniary advantage by corrupt or illegal "
-     "means PCA 7 13 IPC 161"),
+     "means PCA 7 PCA 13 IPC 161"),
     # diagnose_recall.py: IPC_211 now surfaces but IPC_166 (public servant
     # disobeying law with intent to cause injury) still never does, even
     # with "166" spelled out numerically — the section is about the
@@ -103,17 +103,17 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
     (r"\b(fake|false)\s+(fir|case|complaint)\b",
      "false charge instituting false criminal proceedings public servant "
      "disobeying law with intent to cause injury to a person abuse of "
-     "official position at the behest of a third party IPC 211 182 166"),
+     "official position at the behest of a third party IPC 211 IPC 182 IPC 166"),
     (r"\b(police|officer)\s+(refused?|failed?|didn.?t)\s+(register|investigate|take\s+fir)\b",
      "public servant disobeying law failure investigate IPC 166A"),
 
     # Theft / fraud / cheating
     (r"\b(stole|stolen|theft|rob\w*)\b",
-     "theft robbery stolen property IPC 378 379 390 392"),
+     "theft robbery stolen property IPC 378 IPC 379 IPC 390 IPC 392"),
     (r"\b(cheated?|scammed?|defrauded?|conned?)\b",
-     "cheating dishonestly IPC 415 417 420"),
+     "cheating dishonestly IPC 415 IPC 417 IPC 420"),
     (r"\bembezzl\w*\b",
-     "criminal breach of trust misappropriation IPC 405 406 408 409"),
+     "criminal breach of trust misappropriation IPC 405 IPC 406 IPC 408 IPC 409"),
     # Breach of trust by an employee/servant who appropriates property over
     # time — catches "employee stole ... over months" style facts that used
     # to match only the plain theft pattern above (via "stole") because they
@@ -123,29 +123,58 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
      r"(?=.*\b(over\s+(the\s+)?(past\s+)?(several\s+)?(\d+\s+)?(months|weeks|years)|"
      r"repeatedly|regularly|multiple\s+times|for\s+months|ongoing|over\s+time)\b)",
      "criminal breach of trust by servant/agent entrusted with property "
-     "IPC 405 406 408 409"),
+     "IPC 405 IPC 406 IPC 408 IPC 409"),
 
     # Domestic / family
     (r"\bhusband\s+(beat\w*|abused?|tortured?|harass\w*)\s+(wife|her)\b",
      "cruelty husband wife IPC 498A domestic violence"),
     (r"\bdowry\s+(demand\w*|harass\w*|death)\b",
-     "dowry death cruelty IPC 304B 498A"),
+     "dowry death cruelty IPC 304B IPC 498A"),
     (r"\bchild\s+(sexual\s+abuse|molest\w*|assault)\b",
      "POCSO sexual assault child minor penetrative assault"),
+    # Bigamy — GAP: no rule existed here at all, unlike every other
+    # marriage-offence pattern above. A "two wives at the same time" query
+    # has ZERO lexical overlap with IPC_494/BNS_082's own wording
+    # ("marrying again", "spouse", "husband or wife alive" — never "wife"
+    # plural, never "two"), and their keywords ("bigamy", "second
+    # marriage") don't overlap either, so nothing anchored retrieval to
+    # them at all — it drifted toward completely unrelated sexual-offence
+    # sections (rape, POCSO, even NDPS) that happened to share the
+    # singular "wife" token instead. Explicit section numbers here trigger
+    # hybrid_retriever.py's _direct_section_lookup fast path — an exact,
+    # guaranteed match regardless of how the query is phrased — the same
+    # mechanism every other QUICK_SYNONYMS entry with section numbers
+    # already relies on.
+    #
+    # BUGFIX (caught while adding this): _direct_section_lookup's regex
+    # requires an act abbreviation immediately before EACH number — "IPC
+    # 494 495" only captures ("ipc","494"), never 495, since 495 has no
+    # act prefix of its own immediately before it. Repeating the act code
+    # per number ("IPC 494 IPC 495") is what actually gets every intended
+    # section through the fast path; the terser "494 495" form used
+    # elsewhere in this file silently only pins the first number of any
+    # multi-number run.
+    (r"\b(two\s+wives|second\s+wife|bigam\w*|polygam\w*)\b|"
+     r"\bmarri\w*\s+(again|another\s+(person|woman|man))\b.{0,40}"
+     r"\b(alive|already\s+married|living|subsisting|spouse)\b|"
+     r"\b(alive|living|already\s+married)\b.{0,40}"
+     r"\bmarri\w*\s+(again|another\s+(person|woman|man))\b",
+     "bigamy marrying again during the lifetime of a spouse while previous "
+     "marriage subsists second marriage IPC 494 IPC 495 BNS 82 BNS 83"),
 
     # Cyber
     (r"\bhack\w+\b",
      "unauthorised computer access cybercrime ITA 66"),
     (r"\b(otp\s+fraud|sim\s+swap|phish\w*)\b",
-     "identity theft impersonation electronic ITA 66C 66D"),
+     "identity theft impersonation electronic ITA 66C ITA 66D"),
     (r"\b(revenge\s+porn|morphed?\s+photo|intimate\s+image)\b",
-     "obscene publication without consent ITA 66E 67A"),
+     "obscene publication without consent ITA 66E ITA 67A"),
 
     # Contract / civil
     (r"\bcontract\s+(under\s+threat|under\s+coercion|forced?\s+to\s+sign)\b",
-     "contract coercion voidable ICA 15 19"),
+     "contract coercion voidable ICA 15 ICA 19"),
     (r"\b(breach\s+of\s+contract|not\s+performing|refused?\s+to\s+perform)\b",
-     "breach of contract damages ICA 37 39 73 74"),
+     "breach of contract damages ICA 37 ICA 39 ICA 73 ICA 74"),
     (r"\bspecific\s+performance\b",
      "specific performance enforcement contract SRA 10"),
     (r"\bpromised?\s+to\s+(sell|transfer)\b.{0,60}\brefus\w*\b|"
@@ -162,7 +191,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
      "holding over rights and liabilities of lessor and lessee SRA 6 "
      "TPA 108 IPC 441"),
     (r"\bproperty\s+(fraud|forged?\s+(deed|document|transfer))\b",
-     "cheating forgery property TPA IPC 420 463"),
+     "cheating forgery property TPA IPC 420 IPC 463"),
 
     # Constitutional
     (r"\bfundamental\s+rights?\b",
@@ -205,7 +234,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
      "child employed hazardous work factory mine constitutional prohibition "
      "COI 24 compulsory education COI 21A employing a trafficked child "
      "forced labour exploitation trafficking of minor for labour "
-     "IPC 370 370A 374 BNS 143 144 146 "
+     "IPC 370 IPC 370A IPC 374 BNS 143 BNS 144 BNS 146 "
      "[NOTE: Child Labour (Prohibition and Regulation) Act 1986 and "
      "Factories Act 1948]"),
 
@@ -225,7 +254,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
      r"\bsensitive\s+personal\s+data\b",
      "aadhaar data protection privacy consent personal data body corporate "
      "negligent in implementing reasonable security practices compensation "
-     "for failure to protect data ITA 43A 72A"),
+     "for failure to protect data ITA 43A ITA 72A"),
 
     # Will made when of unsound mind — diagnose_recall.py: ICA_012 surfaces
     # but ICA_011 (who is competent to contract) doesn't; state the
@@ -233,7 +262,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
     (r"\b(will|testament\w*)\b.{0,90}\bunsound\s+mind\b|"
      r"\bunsound\s+mind\b.{0,90}\b(will|testament\w*)\b",
      "testamentary capacity person of unsound mind is incompetent to "
-     "contract who is competent to contract contractual competency ICA 11 12"),
+     "contract who is competent to contract contractual competency ICA 11 ICA 12"),
 
     # Cartel / price-fixing — diagnose_recall.py showed the gold section is
     # ICA_023 (agreements with an unlawful object / opposed to public
@@ -250,7 +279,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
     (r"\b(toxic|poisonous|hazardous|chemical)\s+(waste|substance)\b|"
      r"\bpollut\w*\b.{0,40}\b(river|water|air|soil)\b",
      "negligent conduct with respect to poisonous substance fouling water "
-     "public nuisance IPC 277 278 284"),
+     "public nuisance IPC 277 IPC 278 IPC 284"),
 
     # Hate speech / incitement against a community — diagnose_recall.py
     # showed IPC_153A, IPC_505, and UAPA_013 all completely missing (no
@@ -259,7 +288,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
      r"speech\b.{0,40}\b(violence|hatred)\b.{0,40}\b(minority|community|group)\b|"
      r"\bcall\w*\s+for\s+violence\b.{0,40}\b(minority|community|group)\b)\b",
      "promoting enmity between different groups statements conducing to "
-     "public mischief unlawful association IPC 153A 505 UAPA 13"),
+     "public mischief unlawful association IPC 153A IPC 505 UAPA 13"),
 
     # Tribal land forcibly taken — diagnose_recall.py showed COI_300A,
     # IPC_447, and SCST_003 all completely missing (no pattern existed).
@@ -277,7 +306,7 @@ QUICK_SYNONYMS: list[tuple[str, str]] = [
      r"prosecution|sanction\s+for\s+prosecution|special\s+powers)\b",
      "armed forces special powers act protection of persons acting in good "
      "faith sanction required for prosecution constitutional immunity of "
-     "the state COI 20 21 UAPA 49"),
+     "the state COI 20 COI 21 UAPA 49"),
 
     # Drugs
     (r"\b(drug\s+peddl\w*|narcotic\s+traffick\w*|possess\w*\s+(drugs|narcotics))\b",
