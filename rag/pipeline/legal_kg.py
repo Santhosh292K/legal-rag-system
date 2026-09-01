@@ -492,22 +492,29 @@ def kg_augment_ranked(
 
         # Chronological check (see cutoff_year docstring above): skip a KG
         # addition that could not possibly have applied to the query's own
-        # date instead of blindly stamping it "active". Uses the same
-        # date-precise-when-available check as Stage 4 and the Rocchio
-        # merge (is_chronologically_future) rather than a bare enacted_year
-        # comparison, so a mid-2024 changeover query resolves consistently
-        # across all three places a chunk can enter the ranked list.
+        # date instead of blindly stamping it "active". Checks both
+        # directions — is_chronologically_future (didn't exist yet, e.g.
+        # BNS for a pre-2024 query) and is_superseded_by_cutoff (already
+        # repealed by then, e.g. IPC for a query dated after 2024-07-01;
+        # this is exactly how a "before 2023" query getting BNS pulled back
+        # in via the KG's own IPC->BNS SUPERSEDES edge was found and fixed,
+        # and the mirror direction — IPC surfacing via KG for a query dated
+        # well after the changeover — is the same class of bug) — so a
+        # mid-2024-changeover query resolves consistently across all three
+        # places a chunk can enter the ranked list.
         temporal_meta = meta.get("temporal") or {}
         # section_id is always "ACT_NUM" (e.g. "BNS_146") — no separate
         # act_code field is reconstructed onto this record, so derive it
         # the same reliable way the rest of this file already treats
         # section_ids.
         act_code = sid.split("_", 1)[0]
-        from pipeline.temporal_filter import is_chronologically_future
+        from pipeline.temporal_filter import (
+            is_chronologically_future, is_superseded_by_cutoff,
+        )
         if is_chronologically_future(
             act_code, temporal_meta.get("effective_date"), temporal_meta.get("enacted_year"),
             cutoff_year, cutoff_date,
-        ):
+        ) or is_superseded_by_cutoff(act_code, cutoff_year, cutoff_date):
             continue
 
         from pipeline.chunk_structurer import StructuredChunk

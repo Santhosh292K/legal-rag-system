@@ -511,16 +511,21 @@ class LegalRAGPipeline:
                     # correctly excluded at Stage 4 could still have it
                     # smuggled back in here (Rocchio re-queries BM25 fresh,
                     # with no act/date awareness). Drop any chronologically-
-                    # impossible candidate the same way Stage 4 does
-                    # (is_chronologically_future — same date-precise vs.
-                    # year-only logic, see temporal_filter.py) before
-                    # wrapping the rest as active.
-                    from pipeline.temporal_filter import is_chronologically_future
+                    # impossible candidate the same way Stage 4 does — both
+                    # directions: is_chronologically_future (didn't exist
+                    # yet) and is_superseded_by_cutoff (already repealed by
+                    # then — e.g. IPC for a query dated after 2024-07-01).
+                    from pipeline.temporal_filter import (
+                        is_chronologically_future, is_superseded_by_cutoff,
+                    )
                     fb_raw = [
                         c for c in fb_raw
                         if not is_chronologically_future(
                             c.act_code, c.payload.get("effective_date"), c.enacted_year,
                             intent.cutoff_year, intent.cutoff_date,
+                        )
+                        and not is_superseded_by_cutoff(
+                            c.act_code, intent.cutoff_year, intent.cutoff_date,
                         )
                     ]
                     fb_valid = [

@@ -40,6 +40,7 @@ PENALTY = {
     "superseded": 0.50,   # replaced by another section
     "unknown":    0.80,   # metadata gap — slight penalty
     "future":     0.05,   # didn't exist yet at the query's own date — near-hard exclusion
+    "expired":    0.05,   # already repealed/replaced by the query's own date — same, mirrored
 }
 
 WARNING_MSG = {
@@ -49,6 +50,8 @@ WARNING_MSG = {
     "unknown":    "Amendment status is unknown. Verify independently.",
     "future":     "This provision had not been enacted yet at the time relevant "
                   "to your query — it could not have applied.",
+    "expired":    "This provision had already been repealed and replaced by the "
+                  "time relevant to your query — it no longer applied.",
 }
 
 # 2024-07-01: IPC, CrPC and the Indian Evidence Act were repealed and
@@ -164,6 +167,61 @@ def is_chronologically_future(
     return eff.year > cutoff_year
 
 
+# 2024-07-01: the same date IPC/CRPC/IEA's successors took effect (see
+# KNOWN_EFFECTIVE_DATE_OVERRIDE above) is also the date the predecessor
+# acts stopped governing new conduct — same constant, viewed from the
+# other side.
+KNOWN_SUPERSEDED_DATE: dict[str, date] = {
+    "IPC":  date(2024, 7, 1),
+    "CRPC": date(2024, 7, 1),
+    "IEA":  date(2024, 7, 1),
+}
+
+
+def is_superseded_by_cutoff(
+    act_code:    "str | None",
+    cutoff_year: "int | None",
+    cutoff_date: "str | date | None" = None,
+) -> bool:
+    """The mirror image of is_chronologically_future.
+
+    BUGFIX: everything above only ever asked "did this section exist yet
+    at the query's date" (excluding BNS/BNSS/BSA for a query about a 2020
+    incident, say) — it never asked the OTHER direction: "had this
+    section's act ALREADY been repealed BY the query's date". A query
+    about an incident dated, e.g., March 2026 — well after the 2024-07-01
+    changeover — set cutoff_year/cutoff_date correctly, and
+    is_chronologically_future correctly left BNS/BNSS/BSA un-excluded
+    (they existed by then) — but nothing excluded IPC/CRPC/IEA, which by
+    March 2026 had been repealed for over a year and legally cannot govern
+    conduct from that date. The result: IPC_498A showed up as if it were
+    still in force for a 2026 incident, exactly as wrong (just in the
+    opposite direction) as showing BNS for a 2020 incident would have
+    been, and exactly the kind of case is_chronologically_future's own
+    "before 2023" tests never exercised, since every prior test anchored
+    the query in the past relative to the 2024 changeover, never after it.
+
+    Shared the same way is_chronologically_future is — see that function's
+    docstring — by Stage 4, main.py's Rocchio merge, and legal_kg.py's KG
+    augmentation, so this direction gets the same defense-in-depth across
+    all three chunk-injection points as the other one already did.
+    """
+    if cutoff_year is None:
+        return False
+    superseded_date = KNOWN_SUPERSEDED_DATE.get(act_code)
+    if superseded_date is None:
+        return False
+    if isinstance(cutoff_date, str):
+        cutoff_date = _parse_effective_date(cutoff_date)
+    if cutoff_date is not None:
+        return cutoff_date >= superseded_date
+    # Bare year only: unambiguous except in the changeover year itself
+    # (2024 could be Jan-Jun, still IPC, or Jul-Dec, already BNS) — leave
+    # that genuinely ambiguous case un-excluded, same policy
+    # is_chronologically_future uses for the symmetric case.
+    return cutoff_year > superseded_date.year
+
+
 class TemporalFilter:
     """
     Applies temporal validity logic to each retrieved chunk.
@@ -238,6 +296,23 @@ class TemporalFilter:
                 cutoff_year, cutoff_date,
             )
 
+            # BUGFIX: the mirror case — this section's act had ALREADY been
+            # repealed BY the query's date (e.g. IPC for a March 2026
+            # incident, well after the 2024-07-01 changeover). Every case
+            # this file was tested against before now anchored the query in
+            # the PAST relative to that changeover, so this direction was
+            # never exercised — is_future_law correctly kept BNS/BNSS/BSA
+            # out of a pre-2024 query, but nothing kept IPC/CRPC/IEA out of
+            # a POST-2024 one, and it showed: IPC_498A came back as if
+            # still in force for a query explicitly dated 2026. Also a hard
+            # exclusion, for the same reason is_future_law is — a repealed
+            # act governing conduct after its own repeal is just as
+            # impossible as an unenacted one governing conduct before its
+            # own enactment, and "historical_query" (forced True by the
+            # mere presence of ANY cutoff, not specifically an OLD one)
+            # must not rescue it either.
+            is_expired = is_superseded_by_cutoff(act_code, cutoff_year, cutoff_date)
+
             # Predecessor-act demotion: only for an EXPLICIT "current law"
             # query with no date anchor (e.g. "what is the CURRENT
             # punishment for theft") — a query naming IPC's successor
@@ -257,6 +332,9 @@ class TemporalFilter:
             if is_future_law:
                 label   = "future"
                 penalty = PENALTY["future"]
+            elif is_expired:
+                label   = "expired"
+                penalty = PENALTY["expired"]
             elif historical_query:
                 # Historical queries want the law that applied AT THE TIME —
                 # the dataset's own amended/repealed/superseded chunks are
@@ -272,16 +350,18 @@ class TemporalFilter:
 
             # A chunk is "valid" (eligible for the strict active-only list)
             # when it's the law that actually applies to this query:
-            #   - chronologically impossible ("future") sections are NEVER
-            #     valid, regardless of intent — this is the fix for the
-            #     "before 2023" query returning BNS bug: the old code's
-            #     `label in ("active",) or historical_query` made
+            #   - chronologically impossible sections — "future" (didn't
+            #     exist yet) or "expired" (already repealed by then) — are
+            #     NEVER valid, regardless of intent. This is the fix for
+            #     both the "before 2023" query returning BNS bug AND the
+            #     mirror "March 2026" query returning IPC bug: the old
+            #     code's `label in ("active",) or historical_query` made
             #     is_valid=True for EVERY chunk once historical_query was
-            #     True, silently defeating the cutoff exclusion above.
+            #     True, silently defeating both exclusions.
             #   - otherwise, a historical query accepts any intrinsic label
             #     (it deliberately wants amended/repealed/superseded law).
             #   - otherwise, only the dataset's own "active" label counts.
-            if is_future_law:
+            if is_future_law or is_expired:
                 is_valid = False
             elif historical_query:
                 is_valid = True
