@@ -32,11 +32,11 @@ export function PendingRow() {
         <Scale size={13} strokeWidth={2.25} />
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl rounded-tl-sm border border-border bg-bg-elevated px-4 py-3.5 shadow-[var(--shadow-sm)]">
-        <span className="flex gap-1">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-brand [animation-delay:-0.3s]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-brand [animation-delay:-0.15s]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-brand" />
-        </span>
+        {/* A single measured pulse rather than three bouncing dots — reads
+            as a considered research process, not a casual chat "typing…"
+            cue. Reuses the same pulse-dot keyframe HealthPill's loading
+            state already uses. */}
+        <span className="h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full bg-accent" />
         <span className="text-[13px] text-text-muted" aria-live="polite">
           {THINKING_STEPS[step]}
         </span>
@@ -79,9 +79,9 @@ export function MessageRow({ message }: { message: ChatMessage }) {
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
     >
       {message.role === "user" && <UserRow text={message.text} />}
       {message.role === "pending" && <PendingRow />}

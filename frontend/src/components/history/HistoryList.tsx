@@ -36,9 +36,9 @@ export function HistoryList({
               <div
                 key={c.id}
                 className={cn(
-                  "group flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors",
+                  "group flex items-center gap-2 rounded-md border-l-[3px] border-transparent py-1.5 pr-2 pl-[calc(0.5rem-3px)] text-left text-[13px] transition-colors",
                   c.id === activeId
-                    ? "bg-brand-soft font-medium text-brand"
+                    ? "border-l-accent bg-brand-soft font-medium text-text"
                     : "text-text-muted hover:bg-bg-subtle hover:text-text",
                 )}
               >

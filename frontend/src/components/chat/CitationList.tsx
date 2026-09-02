@@ -30,7 +30,7 @@ function CitationCard({ citation, id }: { citation: Citation; id: string }) {
           className="ml-auto p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
         />
       </div>
-      <p className="mb-1 text-[12.5px] font-medium text-text-muted">{citation.act_name}</p>
+      <p className="mb-1 font-serif text-[13px] italic text-text-muted">{citation.act_name}</p>
       <p
         className={cn(
           "whitespace-pre-wrap text-[13px] leading-relaxed text-text-muted",

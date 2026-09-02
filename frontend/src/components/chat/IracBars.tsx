@@ -23,7 +23,7 @@ export function IracBars({ summary }: { summary: Record<string, number> }) {
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-bg-subtle">
               <div
-                className="h-full rounded-full bg-brand transition-[width] duration-500"
+                className="h-full rounded-full bg-accent transition-[width] duration-500"
                 style={{ width: `${pct}%` }}
               />
             </div>

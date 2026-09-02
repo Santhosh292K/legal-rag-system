@@ -89,10 +89,14 @@ export function Sidebar({
           type="button"
           onClick={() => onSelectCase(null)}
           className={cn(
-            "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+            // A left accent bar rather than a filled pill for the active
+            // state — restrained, letterhead-nav treatment. border-l is
+            // always present (transparent when inactive) so the width
+            // never shifts on select.
+            "flex w-full items-center gap-2.5 rounded-md border border-l-[3px] border-transparent px-3 py-2 text-left text-sm transition-colors",
             activeCaseId === null
-              ? "border-brand/40 bg-brand-soft text-brand font-medium"
-              : "border-transparent text-text-muted hover:bg-bg-subtle",
+              ? "border-l-accent bg-brand-soft font-medium text-text"
+              : "text-text-muted hover:bg-bg-subtle",
           )}
         >
           <MessagesSquare size={15} />
@@ -139,10 +143,10 @@ export function Sidebar({
               type="button"
               onClick={() => onSelectCase(c.case_id)}
               className={cn(
-                "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                "flex items-center gap-2.5 rounded-md border border-l-[3px] border-transparent px-3 py-2 text-left text-sm transition-colors",
                 activeCaseId === c.case_id
-                  ? "border-brand/40 bg-brand-soft text-brand font-medium"
-                  : "border-transparent text-text-muted hover:bg-bg-subtle",
+                  ? "border-l-accent bg-brand-soft font-medium text-text"
+                  : "text-text-muted hover:bg-bg-subtle",
               )}
             >
               <span

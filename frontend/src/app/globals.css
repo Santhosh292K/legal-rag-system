@@ -1,116 +1,133 @@
 @import "tailwindcss";
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* ── Palette: "ink & brass" ─────────────────────────────────────────────
+   Deliberately NOT the indigo/violet "AI chat product" default — this is
+   a legal-research tool, so the identity leans on the visual language of
+   the profession instead: deep ink-navy (the wordmark, primary actions,
+   structural chrome) plus a restrained brass/gold accent (used sparingly,
+   for emphasis marks and data — never for large fills) against a warm
+   parchment-tinted neutral scale rather than cool SaaS-gray. Every color
+   below is a token, never a hardcoded value at a call site — see the
+   `@theme inline` block for how these become Tailwind utilities
+   (`bg-brand`, `text-accent`, etc.), and keep light/dark/system-dark in
+   sync (three copies below) the same way this file already required. */
 :root {
-  --bg: #f6f7fb;
-  --bg-elevated: #ffffff;
-  --bg-subtle: #eef0f6;
-  --bg-overlay: #ffffff;
-  --border: #e2e4ee;
-  --border-strong: #cdd1e0;
-  --text: #14161f;
-  --text-muted: #5b5f72;
-  --text-faint: #8b8fa3;
+  --bg: #f6f4ee;
+  --bg-elevated: #fffefb;
+  --bg-subtle: #ece7d9;
+  --bg-overlay: #fffefb;
+  --border: #ddd6c4;
+  --border-strong: #c7bea3;
+  --text: #1b1d29;
+  --text-muted: #565a6d;
+  --text-faint: #85889a;
 
-  --brand: #4338ca;
-  --brand-strong: #362ea6;
-  --brand-soft: #eeecfd;
-  --brand-contrast: #ffffff;
+  --brand: #16233f;
+  --brand-strong: #0c1526;
+  --brand-soft: #e7eaf1;
+  --brand-contrast: #f4ecd8;
 
-  --accent: #0d9488;
+  /* Brass/gold — the one deliberate accent color. Used for small
+     emphasis marks (rule hairlines, data-bar fills, a seal-ring detail)
+     never as a large fill, so it reads as considered rather than loud. */
+  --accent: #a9822f;
+  --accent-soft: #f6efdc;
 
-  --success: #059669;
-  --success-soft: #ecfdf5;
-  --warning: #b45309;
-  --warning-soft: #fffbeb;
-  --danger: #dc2626;
-  --danger-soft: #fef2f2;
-  --info: #2563eb;
-  --info-soft: #eff6ff;
+  --success: #3f7a55;
+  --success-soft: #e9f3ec;
+  --warning: #93601c;
+  --warning-soft: #f7ecd9;
+  --danger: #9c3b3b;
+  --danger-soft: #f6e9e7;
+  --info: #3c5a85;
+  --info-soft: #e9eef5;
 
   /* Elevation — a matched pair of shadows per level, tuned so dark mode
      reads as a soft glow (translucent white) rather than an invisible
      black-on-black shadow. Referenced via the --shadow-* tokens below,
      never hardcoded rgba() at a call site, so both themes stay correct
      automatically. */
-  --shadow-color: 222 47% 11%;
+  --shadow-color: 30 20% 10%;
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.06);
   --shadow-md: 0 4px 12px -2px hsl(var(--shadow-color) / 0.10), 0 2px 4px -2px hsl(var(--shadow-color) / 0.06);
   --shadow-lg: 0 16px 40px -8px hsl(var(--shadow-color) / 0.16), 0 4px 10px -4px hsl(var(--shadow-color) / 0.08);
-  --shadow-brand: 0 8px 24px -6px hsl(243 68% 25% / 0.35);
+  --shadow-brand: 0 8px 24px -6px hsl(215 45% 20% / 0.35);
 
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #0a0b10;
-  --bg-elevated: #14161f;
-  --bg-subtle: #191b26;
-  --bg-overlay: #1b1e2a;
-  --border: #24273a;
-  --border-strong: #33374a;
-  --text: #edeef5;
-  --text-muted: #9a9db3;
-  --text-faint: #6d7086;
+  --bg: #0a0c12;
+  --bg-elevated: #12151f;
+  --bg-subtle: #171a26;
+  --bg-overlay: #191c2a;
+  --border: #262a3a;
+  --border-strong: #383d52;
+  --text: #ece6d6;
+  --text-muted: #9fa0ab;
+  --text-faint: #6c6f82;
 
-  --brand: #818cf8;
-  --brand-strong: #a5b4fc;
-  --brand-soft: #201f3d;
-  --brand-contrast: #0b0c14;
+  --brand: #8ea0c9;
+  --brand-strong: #b3c1e0;
+  --brand-soft: #1b2438;
+  --brand-contrast: #0a0c12;
 
-  --accent: #2dd4bf;
+  --accent: #d3ac66;
+  --accent-soft: #241d0f;
 
-  --success: #34d399;
-  --success-soft: #0d2420;
-  --warning: #fbbf24;
-  --warning-soft: #2a1f08;
-  --danger: #f87171;
-  --danger-soft: #2a1212;
-  --info: #60a5fa;
-  --info-soft: #101d33;
+  --success: #5fae7c;
+  --success-soft: #10261a;
+  --warning: #d9a752;
+  --warning-soft: #2b2210;
+  --danger: #d97a7a;
+  --danger-soft: #2b1616;
+  --info: #7ea0cc;
+  --info-soft: #141f2f;
 
   --shadow-color: 0 0% 0%;
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.24);
   --shadow-md: 0 4px 16px -2px hsl(var(--shadow-color) / 0.4), 0 0 0 1px hsl(240 20% 100% / 0.03);
   --shadow-lg: 0 20px 48px -10px hsl(var(--shadow-color) / 0.55), 0 0 0 1px hsl(240 20% 100% / 0.04);
-  --shadow-brand: 0 8px 28px -6px hsl(234 89% 74% / 0.28);
+  --shadow-brand: 0 8px 28px -6px hsl(215 55% 70% / 0.28);
 
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a0b10;
-    --bg-elevated: #14161f;
-    --bg-subtle: #191b26;
-    --bg-overlay: #1b1e2a;
-    --border: #24273a;
-    --border-strong: #33374a;
-    --text: #edeef5;
-    --text-muted: #9a9db3;
-    --text-faint: #6d7086;
+    --bg: #0a0c12;
+    --bg-elevated: #12151f;
+    --bg-subtle: #171a26;
+    --bg-overlay: #191c2a;
+    --border: #262a3a;
+    --border-strong: #383d52;
+    --text: #ece6d6;
+    --text-muted: #9fa0ab;
+    --text-faint: #6c6f82;
 
-    --brand: #818cf8;
-    --brand-strong: #a5b4fc;
-    --brand-soft: #201f3d;
-    --brand-contrast: #0b0c14;
+    --brand: #8ea0c9;
+    --brand-strong: #b3c1e0;
+    --brand-soft: #1b2438;
+    --brand-contrast: #0a0c12;
 
-    --accent: #2dd4bf;
+    --accent: #d3ac66;
+    --accent-soft: #241d0f;
 
-    --success: #34d399;
-    --success-soft: #0d2420;
-    --warning: #fbbf24;
-    --warning-soft: #2a1f08;
-    --danger: #f87171;
-    --danger-soft: #2a1212;
-    --info: #60a5fa;
-    --info-soft: #101d33;
+    --success: #5fae7c;
+    --success-soft: #10261a;
+    --warning: #d9a752;
+    --warning-soft: #2b2210;
+    --danger: #d97a7a;
+    --danger-soft: #2b1616;
+    --info: #7ea0cc;
+    --info-soft: #141f2f;
 
     --shadow-color: 0 0% 0%;
     --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.24);
     --shadow-md: 0 4px 16px -2px hsl(var(--shadow-color) / 0.4), 0 0 0 1px hsl(240 20% 100% / 0.03);
     --shadow-lg: 0 20px 48px -10px hsl(var(--shadow-color) / 0.55), 0 0 0 1px hsl(240 20% 100% / 0.04);
-    --shadow-brand: 0 8px 28px -6px hsl(234 89% 74% / 0.28);
+    --shadow-brand: 0 8px 28px -6px hsl(215 55% 70% / 0.28);
 
     color-scheme: dark;
   }
@@ -131,6 +148,7 @@
   --color-brand-soft: var(--brand-soft);
   --color-brand-contrast: var(--brand-contrast);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -141,6 +159,12 @@
   --color-info-soft: var(--info-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Editorial serif — the wordmark, headings, and the act name on each
+     citation (see AnswerCard/CitationList) read in this; body copy and UI
+     chrome stay in --font-sans. That pairing (not a second sans, not an
+     all-serif page) is what reads as "legal institution" rather than
+     "generic AI chat product" or "old-fashioned law firm brochure". */
+  --font-serif: var(--font-source-serif);
   --shadow-elevation-sm: var(--shadow-sm);
   --shadow-elevation-md: var(--shadow-md);
   --shadow-elevation-lg: var(--shadow-lg);
@@ -231,10 +255,12 @@ body {
   animation: shimmer 1.8s ease-in-out infinite;
 }
 
-/* Subtle ambient brand glow for the empty-state hero — a flat icon on a
-   flat page reads as a placeholder; a soft radial glow behind it reads as
-   a designed focal point. Kept faint enough to stay out of the way of
-   text contrast in both themes. */
+/* Subtle ambient glow for the empty-state hero and the header's seal mark
+   — a flat icon on a flat page reads as a placeholder; a soft radial glow
+   behind it reads as a designed focal point. Two-tone (ink + a whisper of
+   brass) rather than a single flat color, echoing the brand palette's
+   ink-and-accent pairing instead of just restating --brand. Kept faint
+   enough to stay out of the way of text contrast in both themes. */
 .brand-glow {
   position: relative;
 }
@@ -242,8 +268,25 @@ body {
   content: "";
   position: absolute;
   inset: -40%;
-  background: radial-gradient(circle, var(--brand) 0%, transparent 70%);
+  background:
+    radial-gradient(circle at 35% 30%, var(--accent) 0%, transparent 55%),
+    radial-gradient(circle, var(--brand) 0%, transparent 70%);
   opacity: 0.16;
   filter: blur(24px);
   z-index: -1;
+}
+
+/* Letterhead rule — a hairline-plus-accent double rule under the header,
+   the one recurring motif tying the masthead, citation cards, and section
+   dividers back to a printed legal document rather than a chat app's flat
+   border. Deliberately just 2 lines and low-contrast, not a full banner. */
+.letterhead-rule {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--accent) 20%,
+    var(--accent) 80%,
+    transparent 100%
+  );
+  opacity: 0.55;
 }
