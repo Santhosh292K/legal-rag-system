@@ -524,11 +524,31 @@ class AnswerGenerator:
         warnings   = [c.warning for c in citations if c.warning]
         # Gap 18: pass citations to confidence assessor so recall gate fires
         confidence = self._assess_confidence(ranked, top_k, citations=citations)
-        # A query about a KNOWN missing act, answered from weakly-related
-        # sections, shouldn't read as "medium" just because the model
-        # dutifully cited every section it was handed — those citations
-        # being present doesn't mean they were the right ones.
-        if known_gaps and weak_retrieval:
+        # A query answered from weakly-related sections shouldn't read as
+        # "medium" just because the model dutifully cited every section it
+        # was handed — those citations being present doesn't mean they were
+        # the right ones.
+        #
+        # BUGFIX: this used to only fire when `known_gaps` was also set —
+        # i.e. only when the pipeline had already identified a NAMED act
+        # missing from the dataset entirely (e.g. "Negotiable Instruments
+        # Act is not indexed"). That left exactly the more dangerous case
+        # uncovered: the law IS in the dataset but retrieval simply failed
+        # to surface it (wrong query vocabulary, a missing QUICK_SYNONYMS
+        # rule, embedding drift, etc.) — no known_gaps gets set for that,
+        # because as far as the pipeline can tell nothing is "missing".
+        # weak_retrieval alone (best-3 avg final_score < LOW_RELEVANCE_
+        # THRESHOLD) is already what triggers the cautious/hedging prompt
+        # above — a query that scores too low to answer confidently should
+        # never come back labeled "medium" regardless of whether a gap was
+        # named, so drop the known_gaps requirement and gate on
+        # weak_retrieval by itself. Confirmed against a real query
+        # ("punishments for having two wives at same time" — IPC_494/495,
+        # BNS_082 are in the dataset but retrieval missed them): answer text
+        # correctly hedged ("does not include any specific provisions...")
+        # while confidence still reported "medium" next to ~0.08 IRAC
+        # coverage scores — the exact contradiction this closes.
+        if weak_retrieval:
             confidence = "low"
         irac_sum   = self._build_irac_summary(ranked, top_k, citations=citations)
         # Gap 23: capture the actual reranker top-K section IDs (not just
