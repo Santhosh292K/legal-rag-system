@@ -384,9 +384,27 @@ class IRACReranker:
         if direct_ids:
             pinned  = [rc for rc in all_ranked if rc.chunk.section_id in direct_ids]
             others  = [rc for rc in all_ranked if rc.chunk.section_id not in direct_ids]
-            # Give pinned chunks a score boost so they appear at top of the window
+            # Give pinned chunks a score boost so they appear at top of the window.
+            #
+            # BUGFIX: this used to floor final_score at a flat 0.85 regardless
+            # of validity_label — but the validity penalty (_VALIDITY_PENALTY,
+            # applied just above, before this block) had ALREADY been
+            # multiplied into final_score by this point. A flat max(score,
+            # 0.85) completely erased that penalty for any section the user
+            # named explicitly by number: a repealed/expired/not-yet-enacted
+            # section (e.g. "IPC 497" — adultery, struck down) came back
+            # scored as if it were fully valid current law. The [WARNING]
+            # tag still renders in the answer text, but final_score also
+            # feeds answer_generator.py's confidence averaging — so a query
+            # about a repealed section could get reported as HIGH confidence,
+            # exactly backwards for the case that most needs a low-confidence
+            # flag. Scale the floor by the same validity penalty instead:
+            # still guarantees a directly-named section is included and
+            # ranked near the top of its own validity band, without
+            # pretending invalid law is as trustworthy as active law.
             for rc in pinned:
-                rc.final_score = max(rc.final_score, 0.85)
+                penalty = _VALIDITY_PENALTY.get(rc.chunk.validity_label, 1.0)
+                rc.final_score = max(rc.final_score, 0.85 * penalty)
             result = pinned + others[:max(0, top_k - len(pinned))]
         else:
             result = all_ranked[:top_k]

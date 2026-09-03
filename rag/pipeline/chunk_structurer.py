@@ -12,6 +12,7 @@ pipeline can run Stage 5 without building the expensive enriched context, and
 then only enrich the final top-K chunks AFTER reranking (not all 35+ candidates).
 """
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 import sys
@@ -19,6 +20,39 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from pipeline.temporal_filter import ValidatedChunk
 from config import JSON_PATH
+
+
+# BUGFIX: related_sections entries come straight from the source dataset
+# as "IPC 2" (space-separated, unpadded) — data/indexer.py's build_payload
+# copies related_sections through with no normalization, unlike
+# parent_section/child_sections, which the dataset already stores in the
+# canonical "IPC_002" form (underscore, digits zero-padded to 3, letter
+# suffix after — confirmed against final_dataset.json directly: e.g.
+# "IPC_029A" -> parent_section "IPC_029"). enrich_chunks() below used to
+# pass related_sections entries straight to self._get(), which does an
+# EXACT section_id match (Qdrant filter or dict key) — "IPC 2" never
+# matches the stored "IPC_002", so related_contents silently came back
+# empty for every chunk, on every query, with no error anywhere.
+# Zero-pad first (the convention every act but CRPC uses) then the raw
+# digit width (CRPC's section_ids are a genuine unpadded mix — same
+# two-candidate strategy hybrid_retriever._direct_section_lookup and
+# answer_generator._fmt_sec already use for the identical problem), then
+# the untouched original as a last resort so an already-canonical ref
+# (this function is safe to call on any of them) still round-trips.
+_REL_REF_RE = re.compile(r'^([A-Za-z]+)[ _](\d+)([A-Za-z]*)$')
+
+
+def _normalize_ref_candidates(raw: str) -> list[str]:
+    if not raw:
+        return []
+    raw = raw.strip()
+    m = _REL_REF_RE.match(raw)
+    if not m:
+        return [raw]
+    act, digits, letters = m.group(1).upper(), m.group(2), m.group(3).upper()
+    padded   = f"{act}_{digits.zfill(3)}{letters}"
+    unpadded = f"{act}_{digits}{letters}"
+    return list(dict.fromkeys([padded, unpadded, raw]))
 
 
 # ── Structured chunk ──────────────────────────────────────────────────────────
@@ -173,10 +207,11 @@ class ChunkStructurer:
 
     def _build_enriched_context(
         self,
-        section_id:     str,
-        content:        str,
-        parent_content: str,
-        child_summaries: list[dict],
+        section_id:       str,
+        content:          str,
+        parent_content:   str,
+        child_summaries:  list[dict],
+        related_contents: list[dict] | None = None,
     ) -> str:
         parts = []
         if parent_content:
@@ -188,6 +223,18 @@ class ChunkStructurer:
                 for c in child_summaries[:3]
             )
             parts.append(f"[Related Sub-sections]\n{child_text}")
+        # BUGFIX: related_contents was computed by enrich_chunks() but
+        # never actually included here — the enriched_context returned
+        # below is what answer_generator.py's _build_context feeds the
+        # LLM, so cross-referenced related sections (e.g. IPC_378 theft
+        # pointing at IPC_379's punishment clause) never reached the model
+        # even on the rare chunk where the lookup succeeded.
+        if related_contents:
+            related_text = "\n".join(
+                f"  - {r['section_id']}: {r['content'][:200]}"
+                for r in related_contents
+            )
+            parts.append(f"[Related Sections]\n{related_text}")
         return "\n\n".join(parts)
 
     # ── Gap 16: minimal structure (no enrichment) ─────────────────────────────
@@ -289,10 +336,17 @@ class ChunkStructurer:
             related_contents = []
             if include_related:
                 for rel_id in (meta.get("related_sections") or [])[:max_related]:
-                    rel_rec = self._get(rel_id)
+                    # BUGFIX: try normalized candidates (padded, unpadded,
+                    # raw) instead of the raw ref straight from the
+                    # dataset — see _normalize_ref_candidates' module note.
+                    rel_rec = None
+                    for cand in _normalize_ref_candidates(rel_id):
+                        rel_rec = self._get(cand)
+                        if rel_rec:
+                            break
                     if rel_rec:
                         related_contents.append({
-                            "section_id": rel_id,
+                            "section_id": rel_rec.get("section", rel_id),
                             "content":    rel_rec["content"][:450],
                             "category":   rel_rec["meta"].get("category", ""),
                         })
@@ -300,7 +354,8 @@ class ChunkStructurer:
 
             # Rebuild enriched context with full hierarchy
             sc.enriched_context = self._build_enriched_context(
-                sc.section_id, sc.content, parent_content, child_summaries
+                sc.section_id, sc.content, parent_content, child_summaries,
+                related_contents,
             )
         return chunks
 

@@ -338,8 +338,17 @@ class AnswerGenerator:
         )
         return text
 
-    def _extract_citations(self, answer_text: str, ranked: list[RankedChunk]) -> list[Citation]:
-        chunk_map = {rc.chunk.section_id: rc.chunk for rc in ranked}
+    def _extract_citations(self, answer_text: str, shown: list[RankedChunk]) -> list[Citation]:
+        # BUGFIX: this used to be called with the full `ranked` list (up to
+        # RERANK_TOP_K=20 candidates) as the "known valid" universe, not
+        # `shown` (the exact top_k subset _build_context actually put in
+        # the LLM's prompt). That let a hallucinated citation for a real
+        # section_id sitting lower in `ranked` — never shown to the model
+        # this call — pass verification as if it were grounded, because it
+        # existed *somewhere* in the broader candidate pool. The citation
+        # map here must only ever contain what the model could actually
+        # have read, or "verified" citation doesn't mean grounded.
+        chunk_map = {rc.chunk.section_id: rc.chunk for rc in shown}
         # Gap 19: normalize alternate citation formats first, then extract
         normalized_text = self._normalize_citations(answer_text, known_ids=frozenset(chunk_map))
         # Matches any section ID of the form: LETTERS_ALPHANUMERIC(_ALPHANUMERIC)*
@@ -520,7 +529,11 @@ class AnswerGenerator:
         )
         answer_text = response["message"]["content"].strip()
 
-        citations  = self._extract_citations(answer_text, ranked)
+        # BUGFIX: pass `top` (the exact top_k subset _build_context put in
+        # the prompt above), not the full `ranked` — see _extract_citations'
+        # docstring note. `top` was already computed above for the
+        # weak_retrieval check, so this reuses it rather than re-deriving.
+        citations  = self._extract_citations(answer_text, top)
         warnings   = [c.warning for c in citations if c.warning]
         # Gap 18: pass citations to confidence assessor so recall gate fires
         confidence = self._assess_confidence(ranked, top_k, citations=citations)
