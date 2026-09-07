@@ -35,6 +35,7 @@ from typing import Iterable
 
 sys.path.append(str(Path(__file__).parent.parent))
 from config import JSON_PATH
+from data.section_ref import normalize_section_ref
 
 try:
     import networkx as nx
@@ -199,6 +200,7 @@ class LegalKnowledgeGraph:
             )
         self.graph: nx.DiGraph = nx.DiGraph()
         self._built = False
+        self._known_ids: set[str] = set()
 
     # ── Build ─────────────────────────────────────────────────────────────────
 
@@ -236,29 +238,53 @@ class LegalKnowledgeGraph:
         self._built = True
         return self
 
+    def build_from_section_store(self, store) -> "LegalKnowledgeGraph":
+        """Build from an already-loaded pipeline.section_store.SectionStore.
+
+        Preferred over build_from_qdrant() inside the running pipeline: the
+        store has already scrolled the whole collection once, so this
+        avoids a second full pass over every point at startup.
+        """
+        class _Stub:
+            __slots__ = ("payload",)
+            def __init__(self, payload): self.payload = payload
+
+        print("[LegalKG] Building graph from the shared SectionStore ...")
+        self._add_records([_Stub(store.get(sid)) for sid in store.section_ids])
+        print(f"[LegalKG] Graph built: {self.graph.number_of_nodes()} nodes, "
+              f"{self.graph.number_of_edges()} edges")
+        self._built = True
+        return self
+
     def build_from_json(
         self,
         json_path: str = JSON_PATH,
     ) -> "LegalKnowledgeGraph":
-        """Fallback: build from dataset JSON when Qdrant client unavailable."""
+        """Fallback: build from the dataset JSON when no Qdrant client is
+        available (tests, offline tooling). Goes through the same payload
+        builder data/indexer.py uses, so the graph is identical either way
+        — the previous version hand-rolled a second, subtly different
+        payload shape whose keys (e.g. "temporal_status") did not match
+        what _add_records actually reads."""
         import json
+        from data.payload import build_payload, resolve_related_refs
+
         print(f"[LegalKG] Building graph from {json_path} ...")
-        with open(json_path) as f:
+        with open(json_path, encoding="utf-8") as f:
             records = json.load(f)
+        known = {r["section"] for r in records}
 
         class _Stub:
+            __slots__ = ("payload",)
             def __init__(self, payload): self.payload = payload
 
-        stubs = [_Stub(r) for r in records]
-        # Remap flat JSON keys to payload shape
+        stubs = []
         for r in records:
-            r.setdefault("section_id",        r.get("section", ""))
-            r.setdefault("parent_section",    r.get("meta", {}).get("hierarchy", {}).get("parent_section", ""))
-            r.setdefault("child_sections",    r.get("meta", {}).get("hierarchy", {}).get("child_sections", []))
-            r.setdefault("related_sections",  r.get("meta", {}).get("related_sections", []))
-            r.setdefault("act_name",          r.get("meta", {}).get("hierarchy", {}).get("act", ""))
-            r.setdefault("chapter",           r.get("meta", {}).get("chapter", ""))
-            r.setdefault("temporal_status",   r.get("meta", {}).get("temporal_status", "active"))
+            payload = build_payload(r)
+            payload["related_sections"], _ = resolve_related_refs(
+                payload.get("related_sections_raw", []), known,
+            )
+            stubs.append(_Stub(payload))
 
         self._add_records(stubs)
         print(f"[LegalKG] Graph built: {self.graph.number_of_nodes()} nodes, "
@@ -267,59 +293,94 @@ class LegalKnowledgeGraph:
         return self
 
     def _add_records(self, records):
-        """Core graph population from a list of Qdrant points (or stubs)."""
-        act_buckets: dict[str, list[str]] = {}
+        """Populate the graph from Qdrant points (or JSON stubs).
 
+        Every edge endpoint is checked against the set of sections that
+        actually exist before the edge is added. networkx's add_edge()
+        creates missing nodes silently, and the previous version relied on
+        that while feeding it raw cross-references — the dataset writes
+        those as "IPC 2" while ids are "IPC_002", so 2414 of 5808 nodes
+        (41%) were phantoms that no Qdrant lookup could ever resolve.
+        Expansion then filled its result cap with those unresolvable ids
+        and the READ_WITH/SUPERSEDES edges the graph exists for never made
+        it into the output at all.
+        """
+        payload_by_id: dict[str, dict] = {}
         for point in records:
             p = point.payload or {}
-            sid    = p.get("section_id", "")
-            act    = p.get("act_name", "")
-            chapter= p.get("chapter", "")
-            status = p.get("temporal_status", "active")
+            sid = p.get("section_id", "")
+            if sid:
+                payload_by_id[sid] = p
 
-            if not sid:
-                continue
+        known = set(payload_by_id)
+        self._known_ids = known
 
-            self.graph.add_node(sid,
-                act_name=act, chapter=chapter, status=status,
-                title=p.get("rule_summary", "")[:80],
+        def _resolve(ref: str) -> str | None:
+            if not ref:
+                return None
+            if ref in known:
+                return ref
+            return normalize_section_ref(ref, known)
+
+        for sid, p in payload_by_id.items():
+            self.graph.add_node(
+                sid,
+                act_name = p.get("act_name", ""),
+                chapter  = p.get("chapter", ""),
+                # BUGFIX: the payload key is "status"; this read
+                # "temporal_status", which no payload has, so every node's
+                # status silently defaulted to "active" — including the
+                # repealed and struck-down ones.
+                status   = p.get("status", "active"),
+                title    = (p.get("rule_summary", "") or "")[:80],
+                act_code = p.get("act_code", ""),
             )
-            act_buckets.setdefault(act, []).append(sid)
 
-            # PARENT_OF / CHILD_OF
-            parent = p.get("parent_section", "")
+        for sid, p in payload_by_id.items():
+            parent = _resolve(p.get("parent_section", ""))
             if parent and parent != sid:
                 self.graph.add_edge(parent, sid, type=EDGE_CHILD_OF)
                 self.graph.add_edge(sid, parent, type=EDGE_PARENT_OF)
 
             for child in (p.get("child_sections") or []):
-                if child and child != sid:
-                    self.graph.add_edge(sid, child, type=EDGE_CHILD_OF)
-                    self.graph.add_edge(child, sid, type=EDGE_PARENT_OF)
+                child_id = _resolve(child)
+                if child_id and child_id != sid:
+                    self.graph.add_edge(sid, child_id, type=EDGE_CHILD_OF)
+                    self.graph.add_edge(child_id, sid, type=EDGE_PARENT_OF)
 
-            # RELATES_TO (bidirectional)
             for rel in (p.get("related_sections") or []):
-                if rel and rel != sid:
-                    self.graph.add_edge(sid, rel, type=EDGE_RELATES_TO)
-                    self.graph.add_edge(rel, sid, type=EDGE_RELATES_TO)
+                rel_id = _resolve(rel)
+                if rel_id and rel_id != sid:
+                    self.graph.add_edge(sid, rel_id, type=EDGE_RELATES_TO)
+                    self.graph.add_edge(rel_id, sid, type=EDGE_RELATES_TO)
 
-        # SAME_ACT edges (connect consecutive sections in the same act)
-        for act, sids in act_buckets.items():
-            for s in sids:
-                self.graph.nodes[s]["act_name"] = act
-
-        # Overlay SUPERSEDES (IPC → BNS domain knowledge)
-        for ipc_id, bns_id in IPC_TO_BNS.items():
-            if self.graph.has_node(ipc_id) and self.graph.has_node(bns_id):
+        # Overlay SUPERSEDES (IPC -> BNS domain knowledge). Both endpoints
+        # are resolved because the hardcoded map was written with unpadded
+        # ids for 8 of its 60 entries (BNS_74, BNS_85, ...) while the
+        # dataset stores BNS_074/BNS_085 — those supersession links, which
+        # cover the sexual-offence and dowry-cruelty group, were dropped.
+        for ipc_ref, bns_ref in IPC_TO_BNS.items():
+            ipc_id, bns_id = _resolve(ipc_ref), _resolve(bns_ref)
+            if ipc_id and bns_id:
                 self.graph.add_edge(bns_id, ipc_id, type=EDGE_SUPERSEDES,
                                     note="BNS replaces IPC")
                 self.graph.add_edge(ipc_id, bns_id, type=EDGE_SUPERSEDES,
                                     note="IPC superseded by BNS")
 
-        # Overlay READ_WITH (domain knowledge pairs)
-        for src, dst, note in READ_WITH_PAIRS:
-            self.graph.add_edge(src, dst, type=EDGE_READ_WITH, note=note)
-            self.graph.add_edge(dst, src, type=EDGE_READ_WITH, note=note)
+        # Overlay READ_WITH (domain knowledge pairs), same resolution —
+        # this list referenced "IPC_34", which is stored as "IPC_034".
+        for src_ref, dst_ref, note in READ_WITH_PAIRS:
+            src_id, dst_id = _resolve(src_ref), _resolve(dst_ref)
+            if src_id and dst_id:
+                self.graph.add_edge(src_id, dst_id, type=EDGE_READ_WITH, note=note)
+                self.graph.add_edge(dst_id, src_id, type=EDGE_READ_WITH, note=note)
+
+    def unresolved_nodes(self) -> list[str]:
+        """Nodes with no backing section. Should always be empty — a
+        non-empty result means an edge escaped resolution. Asserted in
+        tests/test_legal_kg.py."""
+        known = getattr(self, "_known_ids", set())
+        return [n for n in self.graph.nodes if n not in known]
 
     # ── Query interface ────────────────────────────────────────────────────────
 
@@ -337,6 +398,12 @@ class LegalKnowledgeGraph:
                 result.append(dst)
         return result
 
+    # Edge types in descending order of how much they tell you that
+    # retrieval didn't already know. Structural edges (PARENT_OF/CHILD_OF)
+    # are excluded by default because ChunkStructurer already supplies
+    # hierarchy; SAME_ACT is far too weak to expand on.
+    EXPANSION_PRIORITY = (EDGE_SUPERSEDES, EDGE_READ_WITH, EDGE_RELATES_TO)
+
     def expand(
         self,
         seed_ids:   list[str],
@@ -344,44 +411,56 @@ class LegalKnowledgeGraph:
         edge_types: set[str]  | None = None,
         max_expand: int       = 8,
     ) -> KGExpansionResult:
-        """
-        Multi-hop expansion from seed sections.
+        """Multi-hop expansion from seed sections, novel ids only.
 
-        Returns only NOVEL sections (not already in seed_ids),
-        ordered by hop distance (closer = earlier in list).
-        Capped at max_expand to avoid flooding the context.
-
-        Default edge_types = {READ_WITH, SUPERSEDES, RELATES_TO}
-        (PARENT_OF / CHILD_OF / SAME_ACT omitted by default — structural
-        hierarchy is already handled by ChunkStructurer; KG expansion is
-        most valuable for cross-section legal relationships).
+        Neighbours are visited in EXPANSION_PRIORITY order rather than
+        graph-insertion order. That ordering is the whole value of the
+        stage: RELATES_TO outnumbers READ_WITH and SUPERSEDES by roughly
+        100:1, so an insertion-ordered walk filled the (small) result cap
+        with generic cross-references and the curated legal-practice edges
+        — IPC_302 -> IPC_034 common intention, IPC_302 -> BNS_103
+        supersession — never survived truncation.
         """
         if edge_types is None:
-            edge_types = {EDGE_READ_WITH, EDGE_SUPERSEDES, EDGE_RELATES_TO}
+            edge_types = set(self.EXPANSION_PRIORITY)
 
-        visited     = set(seed_ids)
-        frontier    = set(seed_ids)
-        new_ids:  list[str]   = []
+        priority = {t: i for i, t in enumerate(self.EXPANSION_PRIORITY)}
+
+        visited   = set(seed_ids)
+        frontier  = list(seed_ids)
+        new_ids:   list[str]   = []
         traversed: list[KGEdge] = []
 
-        for hop in range(hops):
-            next_frontier: set[str] = set()
+        for _hop in range(hops):
+            if len(new_ids) >= max_expand:
+                break
+            candidates: list[tuple[int, str, str, str, str]] = []
             for src in frontier:
+                if not self.graph.has_node(src):
+                    continue
                 for _, dst, data in self.graph.out_edges(src, data=True):
                     etype = data.get("type", "")
-                    if etype not in edge_types:
+                    if etype not in edge_types or dst in visited:
                         continue
-                    if dst in visited:
-                        continue
-                    if len(new_ids) >= max_expand:
-                        break
-                    visited.add(dst)
-                    next_frontier.add(dst)
-                    new_ids.append(dst)
-                    traversed.append(KGEdge(src=src, dst=dst, edge_type=etype,
-                                             note=data.get("note", "")))
+                    candidates.append(
+                        (priority.get(etype, len(priority)), src, dst, etype,
+                         data.get("note", ""))
+                    )
+
+            # Stable sort by edge-type priority; ties keep discovery order.
+            candidates.sort(key=lambda c: c[0])
+
+            next_frontier: list[str] = []
+            for _prio, src, dst, etype, note in candidates:
                 if len(new_ids) >= max_expand:
                     break
+                if dst in visited:
+                    continue
+                visited.add(dst)
+                new_ids.append(dst)
+                next_frontier.append(dst)
+                traversed.append(KGEdge(src=src, dst=dst, edge_type=etype, note=note))
+
             frontier = next_frontier
             if not frontier:
                 break
@@ -393,16 +472,30 @@ class LegalKnowledgeGraph:
             hop_depth       = hops,
         )
 
+    # Acts that replaced IPC / CrPC / IEA on 2024-07-01.
+    SUCCESSOR_ACT_CODES = frozenset({"BNS", "BNSS", "BSA"})
+
     def get_superseded_by(self, section_id: str) -> list[str]:
-        """Return sections that supersede the given section (e.g. BNS for IPC)."""
+        """Sections that supersede this one (e.g. BNS_103 for IPC_302).
+
+        BUGFIX: this filtered on ``act_name in ("BNS", "BNSS", "BSA")``,
+        but act_name holds the full title — "Bharatiya Nyaya Sanhita 2023"
+        — so the test never passed and this always returned []. Same
+        act_code-vs-act_name confusion that made the IRAC reranker's act
+        bonus fire on the wrong acts.
+        """
+        if not self.graph.has_node(section_id):
+            return []
         return [
             dst for _, dst, d in self.graph.out_edges(section_id, data=True)
-            if d.get("type") == EDGE_SUPERSEDES and
-            self.graph.nodes.get(dst, {}).get("act_name", "") in ("BNS", "BNSS", "BSA")
+            if d.get("type") == EDGE_SUPERSEDES
+            and self.graph.nodes.get(dst, {}).get("act_code", "") in self.SUCCESSOR_ACT_CODES
         ]
 
     def get_read_with(self, section_id: str) -> list[str]:
         """Return sections commonly cited together with this section."""
+        if not self.graph.has_node(section_id):
+            return []
         return [
             dst for _, dst, d in self.graph.out_edges(section_id, data=True)
             if d.get("type") == EDGE_READ_WITH
@@ -535,12 +628,13 @@ def kg_augment_ranked(
         # Find the KG edge that brought this section in
         edge_notes = [e.note for e in expansion.edges_traversed if e.dst == sid]
         note_str   = edge_notes[0] if edge_notes else "KG expansion"
+        from pipeline.section_pinner import KG_EXPLANATION_PREFIX
 
         augmented.append(RankedChunk(
             chunk       = sc,
             final_score = 0.30,
             irac_score  = 0.30,
-            explanation = f"KG-augmented ({note_str})",
+            explanation = f"{KG_EXPLANATION_PREFIX} ({note_str})",
         ))
         added += 1
 

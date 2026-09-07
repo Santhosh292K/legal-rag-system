@@ -14,21 +14,18 @@ LABEL_PATTERNS = {
                                r"conclusion\s+of\s+investigation\s*[:\-]"],
 }
 
-
 class ChargesheetChunker(BaseChunker):
     doc_type = "Charge Sheet"
 
     def chunk(self, text: str, document_id: str, case_id: str,
               entities: dict | None = None) -> list[Chunk]:
         sections = split_by_labels(text, LABEL_PATTERNS)
+        chunks = self._chunks_from_sections(sections, document_id, case_id, entities)
 
-        chunks = []
-        for i, (role, content) in enumerate(sections.items()):
-            if content:
-                chunks.append(self._make(role, content, document_id, case_id, i,
-                                          metadata={"entities": entities} if entities else None))
-
+        # No labels matched -> this document doesn't follow the expected
+        # template (a free-form or handwritten transcript, say). Don't drop
+        # it; fall back to generic sliding-window chunking.
         if not chunks:
-            return GenericChunker(doc_type=self.doc_type).chunk(text, document_id, case_id, entities)
-
+            return GenericChunker(doc_type=self.doc_type).chunk(
+                text, document_id, case_id, entities)
         return chunks

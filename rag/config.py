@@ -31,6 +31,15 @@ RERANKER_MODEL        = "BAAI/bge-reranker-large"
 QDRANT_PATH           = str(PIPELINE_DIR / os.getenv("QDRANT_PATH", "qdrant_db"))
 COLLECTION_NAME       = os.getenv("COLLECTION_NAME", "legal_sections")
 
+# ── BM25 (Okapi) ─────────────────────────────────────
+# Standard Okapi parameters. k1 controls term-frequency saturation, b the
+# strength of document-length normalization (b=0 disables it entirely).
+# data/indexer.py bakes these into the stored document-side weights and
+# records them in data/bm25_manifest.json; changing either value requires
+# a re-index, which the manifest check enforces.
+BM25_K1       = 1.2
+BM25_B        = 0.75
+
 # ── Retrieval ────────────────────────────────────────
 BM25_TOP_K    = 25
 DENSE_TOP_K   = 25

@@ -1,6 +1,10 @@
 qdrant-client>=1.9.0
 sentence-transformers>=3.0.0
-rank-bm25>=0.2.2
+# Required by pipeline/legal_kg.py. It was missing, so on a clean install
+# LegalKnowledgeGraph() raised ImportError, main.py caught it as
+# "KG build failed (non-fatal, KG disabled)", and Stage 6.75 never ran for
+# anyone who followed the README.
+networkx>=3.0
 google-genai>=1.0.0
 transformers>=4.40.0
 torch>=2.0.0

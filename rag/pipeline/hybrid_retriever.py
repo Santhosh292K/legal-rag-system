@@ -1,39 +1,40 @@
 """
 pipeline/hybrid_retriever.py
-Hybrid retrieval: BM25 sparse + BGE dense via Qdrant.
-Uses Reciprocal Rank Fusion (RRF) to merge ranked lists.
+Hybrid retrieval: Okapi BM25 (sparse) + BGE dense, fused with weighted RRF.
 Compatible with qdrant-client >= 1.9
 """
 import json
-import math
+import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-import sys
-import re
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
-    Filter, FieldCondition, MatchValue, MatchAny, SparseVector,
+    Filter, FieldCondition, MatchValue, SparseVector,
 )
-from sentence_transformers import SentenceTransformer
 
 sys.path.append(str(Path(__file__).parent.parent))
 from config import (
     QDRANT_PATH, COLLECTION_NAME,
     EMBEDDING_MODEL, BM25_TOP_K, DENSE_TOP_K, HYBRID_TOP_K, BM25_VOCAB_PATH,
 )
-from data.bm25_tokenizer import tokenize as bm25_tokenize
+from data.bm25_tokenizer import tokenize as bm25_tokenize, build_search_text, TOKENIZER_VERSION
+from data.index_manifest import read_manifest, vocab_fingerprint, IndexMismatchError, INDEX_FORMAT_VERSION
+from data.section_ref import extract_section_refs
+from pipeline.section_store import SectionStore
 
 # bge-large-en-v1.5 is trained asymmetrically: the query side needs this
-# instruction prefix, the passage side doesn't. data/indexer.py encodes
-# embedding_text with no prefix (it's the passage side of the index).
-# This is the query-side half of that pair. Shared as a module constant
-# (not just a local string in _cached_encode) because SectionPinner also
-# does dense search against this SAME passage-embedded "legal_sections"
-# collection and needs the identical prefix — see the wiring note in
-# main.py's SectionPinner construction and pipeline/section_pinner.py.
+# instruction prefix, the passage side doesn't. data/indexer.py encodes the
+# passage side with no prefix. Shared as a module constant because
+# SectionPinner and CaseIndexer dense-search the same passage vectors and
+# need the identical prefix.
 BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+
+# Okapi query-side term-frequency saturation. A query term repeated by
+# several expansion variants shouldn't scale linearly; k3 caps its growth
+# the same way k1 caps document-side term frequency.
+BM25_K3 = 8.0
 
 
 # ── Data class ────────────────────────────────────────────────────────────────
@@ -65,18 +66,37 @@ class RetrievedChunk:
 
 def reciprocal_rank_fusion(
     ranked_lists: list[list[RetrievedChunk]],
-    k: int = 20,   # Gap 8: tuned from paper default 60 → 20 for small-corpus lists (25-35 items).
-                   # At k=60, score diff between rank-1 and rank-10 is only ~0.002.
-                   # At k=20, it's ~0.014 — 8× more signal for the merger.
-                   # Grid-search over {10,20,40,60} on NDCG@10 to validate.
+    k: int = 20,
+    weights: list[float] | None = None,
 ) -> list[RetrievedChunk]:
+    """Weighted Reciprocal Rank Fusion.
+
+    k=20 rather than the paper's 60: these lists are 25-35 items over a
+    3.4k-section corpus, and at k=60 the score gap between rank 1 and
+    rank 10 is only ~0.002, which gives the merger almost nothing to work
+    with. At k=20 it is ~0.014.
+
+    `weights` scales each list's contribution. Plain (unweighted) RRF sums
+    every list equally, which is correct when the lists are INDEPENDENT
+    evidence — e.g. a dense ranking and a sparse ranking of the same query.
+    It is wrong across multi-query expansion, where the variants are
+    near-duplicates by construction ("X", "X under IPC", "X <synonyms>"):
+    there, an unweighted sum rewards how redundantly a query was expanded
+    rather than how well retrievers agree. See retrieve() for the decay
+    schedule applied there.
+    """
+    if weights is None:
+        weights = [1.0] * len(ranked_lists)
+    if len(weights) != len(ranked_lists):
+        raise ValueError("weights must match ranked_lists in length")
+
     scores: dict[str, float]          = {}
     chunks: dict[str, RetrievedChunk] = {}
 
-    for ranked in ranked_lists:
+    for ranked, weight in zip(ranked_lists, weights):
         for rank, chunk in enumerate(ranked, start=1):
             sid = chunk.section_id
-            scores[sid] = scores.get(sid, 0.0) + 1.0 / (k + rank)
+            scores[sid] = scores.get(sid, 0.0) + weight / (k + rank)
             if sid not in chunks:
                 chunks[sid] = chunk
 
@@ -85,7 +105,6 @@ def reciprocal_rank_fusion(
         c = chunks[sid]
         c.rrf_score = rrf
         merged.append(c)
-
     return merged
 
 
@@ -93,95 +112,150 @@ def reciprocal_rank_fusion(
 
 class HybridRetriever:
     def __init__(self, vocab_path: str = BM25_VOCAB_PATH, client=None,
-                 embed_model=None):
-        # Accept an already-open client (e.g. shared with CaseIndexer, which
-        # points at the same local ./qdrant_db folder) rather than always
-        # opening a new one — Qdrant's embedded/local mode file-locks the
-        # storage folder to a single client, so two independent clients on
-        # the same path raises RuntimeError: "already accessed by another
-        # instance". Standalone use (just running main.py alone) still
-        # works unchanged, since client defaults to None here.
+                 embed_model=None, section_store: SectionStore | None = None,
+                 verify_index: bool = True):
+        # Qdrant's local mode file-locks the storage folder to a single
+        # client, so callers that already have one (CaseIndexer, the
+        # evaluation harness) must be able to share it. Same reasoning for
+        # the embedding model: loading a second copy of bge-large on top of
+        # an existing one is what used to CUDA-OOM the ablation study.
         self.client      = client or QdrantClient(path=QDRANT_PATH)
-        # BUGFIX: this used to unconditionally load a fresh SentenceTransformer
-        # here, even when a caller (e.g. evaluate.py's ablation_study, which
-        # builds 7 LegalRAGPipeline instances in a loop) already has one
-        # loaded. On an 8GB GPU, loading bge-large a second time on top of
-        # the first is what caused every ablation variant to CUDA OOM at a
-        # trivial 20MiB allocation — there was simply no VRAM left after two
-        # full copies of the model. Accept an already-loaded model the same
-        # way `client` is already shared, and only load a fresh one as a
-        # fallback for callers that don't have one yet (standalone runs).
-        self.embed_model = embed_model or SentenceTransformer(EMBEDDING_MODEL)
+        if embed_model is None:
+            # Imported lazily: every in-process caller (main.py, the
+            # evaluation harness, the backend) injects an already-loaded
+            # model, and requiring torch at import time made every module
+            # that merely needs RetrievedChunk — temporal_filter,
+            # chunk_structurer, the tests — unimportable without it.
+            from sentence_transformers import SentenceTransformer
+            embed_model = SentenceTransformer(EMBEDDING_MODEL)
+        self.embed_model = embed_model
 
         with open(vocab_path, "r") as f:
             self.vocab: dict[str, int] = json.load(f)
 
-        # Gap 5 (revised): IDF weights for every token index in the vocab.
-        #
-        # Real IDF from actual document frequency, computed once by
-        # data/build_bm25_idf.py and cached to data/bm25_idf.json. This
-        # replaces the old encounter-order approximation, which assumed
-        # "built into the vocab earlier == more common" — a coincidence of
-        # indexer iteration order, not a measurement of how many sections
-        # actually contain each token. Real df gives BM25 its intended
-        # signal: e.g. "section"/"act" (appear in nearly every record) get
-        # pushed toward ~0, while genuinely rare terms ("dacoity", "pocso")
-        # get correctly boosted — the old approximation could get this
-        # backwards for any token whose vocab-insertion position didn't
-        # match its true rarity.
-        #
-        # Falls back to the old approximation if bm25_idf.json hasn't been
-        # generated yet, so this is non-breaking for anyone who hasn't run
-        # `python3 data/build_bm25_idf.py` — but you should run it once and
-        # keep the real weights; the fallback is strictly worse.
-        vocab_size = len(self.vocab)
         idf_path = Path(vocab_path).parent / "bm25_idf.json"
-        if idf_path.exists():
-            with open(idf_path, "r") as f:
-                raw_idf: dict[str, float] = json.load(f)
-            self.idf: dict[int, float] = {int(k): v for k, v in raw_idf.items()}
-        else:
-            print(
-                f"[HybridRetriever] WARNING: {idf_path} not found — falling back to "
-                "the encounter-order IDF approximation, which does not reflect true "
-                "document frequency. Run `python3 data/build_bm25_idf.py` once to "
-                "generate real weights."
+        if not idf_path.exists():
+            raise IndexMismatchError(
+                f"{idf_path} is missing",
+                "The IDF table is written by the indexer alongside the vocabulary.",
             )
-            self.idf = {
-                idx: math.log((vocab_size + 1.0) / (idx + 2.0))
-                for idx in range(vocab_size)
-            }
+        with open(idf_path, "r") as f:
+            self.idf: dict[int, float] = {int(k): v for k, v in json.load(f).items()}
 
-        # Gap 7: Cache dense embeddings so repeated queries (multi-query
-        # expansion can send up to 10 variants, some semantically redundant)
-        # don't pay the bge-large inference cost twice.
+        # One scroll of the corpus into memory. Every single-section lookup
+        # in the pipeline goes through this instead of a filtered scroll —
+        # see pipeline/section_store.py for why that matters here.
+        self.sections = section_store or SectionStore(
+            client=self.client, collection_name=COLLECTION_NAME,
+        )
+
+        if verify_index:
+            self._verify_index_consistency(Path(vocab_path).parent)
+
         embed_model_ref = self.embed_model
 
         @lru_cache(maxsize=256)
         def _cached_encode(text: str) -> tuple:
-            # bge-large-en-v1.5 is trained asymmetrically: queries need this
-            # instruction prefix prepended before encoding, passages don't.
-            # data/indexer.py correctly encodes embedding_text with no
-            # prefix (it's building the passage side of the index) — this
-            # was the missing query-side half of that pair. Without it,
-            # dense retrieval quality is measurably worse across the board
-            # (see BAAI/bge-large-en-v1.5 model card). Only applied here,
-            # at the single query-encode call site used for corpus search —
-            # not in section_pinner.py / query_router.py, whose shared
-            # embed_fn does symmetric query-vs-example-phrase matching for
-            # classification, not asymmetric query-vs-passage retrieval.
             prefixed = f"{BGE_QUERY_INSTRUCTION}{text}"
             vec = embed_model_ref.encode(prefixed, normalize_embeddings=True)
             return tuple(vec.tolist())
 
         self._cached_encode = _cached_encode
 
+    # ── Startup consistency check ────────────────────────────────────────────
+
+    def _verify_index_consistency(self, data_dir: Path):
+        """Refuse to serve a BM25 index that cannot have been produced by
+        the vocabulary we just loaded.
+
+        Sparse vectors are not self-describing: indices are integers whose
+        meaning lives entirely in the vocabulary. If the two disagree, every
+        query silently searches for the wrong terms and retrieval quality
+        collapses with no error anywhere. This repository shipped in exactly
+        that state — stored vectors from one tokenizer, vocabulary file from
+        another, measured index agreement ~15%.
+
+        Two independent checks, because either can catch what the other misses:
+          1. the manifest, which records what the indexer actually built;
+          2. a live probe of a real stored vector, which catches a stale
+             Qdrant collection even when the on-disk files agree.
+        """
+        manifest = read_manifest(data_dir)
+        if manifest is None:
+            raise IndexMismatchError(
+                f"no {data_dir}/bm25_manifest.json",
+                "The index predates consistency checking and cannot be trusted.",
+            )
+
+        if manifest.get("index_format_version") != INDEX_FORMAT_VERSION:
+            raise IndexMismatchError(
+                f"index format v{manifest.get('index_format_version')} "
+                f"but this code expects v{INDEX_FORMAT_VERSION}"
+            )
+        if manifest.get("tokenizer_version") != TOKENIZER_VERSION:
+            raise IndexMismatchError(
+                f"index built with tokenizer v{manifest.get('tokenizer_version')} "
+                f"but this code tokenizes as v{TOKENIZER_VERSION}"
+            )
+        actual = vocab_fingerprint(self.vocab)
+        if manifest.get("vocab_fingerprint") != actual:
+            raise IndexMismatchError(
+                "bm25_vocab.json does not match the vocabulary the corpus "
+                "vectors were built with",
+                f"manifest={manifest.get('vocab_fingerprint','?')[:16]}… "
+                f"loaded={actual[:16]}…",
+            )
+
+        self._probe_stored_vector()
+
+    def _probe_stored_vector(self, min_agreement: float = 0.9):
+        """Read one real stored sparse vector back and confirm its indices
+        decode against the loaded vocabulary. Cheap (one point) and it is
+        the only check that actually looks at what Qdrant holds."""
+        try:
+            points, _ = self.client.scroll(
+                collection_name=COLLECTION_NAME, limit=1,
+                with_payload=True, with_vectors=True,
+            )
+        except Exception as e:                      # pragma: no cover
+            print(f"[HybridRetriever] WARNING: could not probe stored vectors ({e}).")
+            return
+        if not points:
+            raise IndexMismatchError("the Qdrant collection is empty")
+
+        point   = points[0]
+        vectors = point.vector if isinstance(point.vector, dict) else {}
+        sparse  = vectors.get("sparse")
+        if sparse is None:
+            raise IndexMismatchError("stored points carry no 'sparse' vector")
+
+        stored_idx = set(getattr(sparse, "indices", []) or [])
+        if not stored_idx:
+            return
+
+        sid    = (point.payload or {}).get("section_id", "")
+        record = self.sections.get_record(sid)
+        if record is None:
+            return
+        expected = {
+            self.vocab[t] for t in set(bm25_tokenize(build_search_text(record)))
+            if t in self.vocab
+        }
+        if not expected:
+            return
+
+        agreement = len(stored_idx & expected) / len(stored_idx)
+        if agreement < min_agreement:
+            raise IndexMismatchError(
+                f"stored sparse vectors do not decode against bm25_vocab.json "
+                f"(section {sid}: only {agreement:.0%} of its stored term ids "
+                f"correspond to its own text)",
+                "The Qdrant collection was built from a different vocabulary "
+                "than the one on disk.",
+            )
+
     # ── Public: properly-prefixed query embedding ────────────────────────────
-    # Exposed so other components that dense-search this same passage
-    # collection (currently: SectionPinner) use the identical asymmetric
-    # query encoding this class uses internally, instead of each call site
-    # growing its own copy of the prefix logic (or, worse, silently doing
-    # symmetric encoding against an asymmetrically-trained passage index).
+
     def embed_query_vector(self, text: str) -> list[float]:
         return list(self._cached_encode(text))
 
@@ -193,10 +267,7 @@ class HybridRetriever:
         top_k:   int           = DENSE_TOP_K,
         filters: Filter | None = None,
     ) -> list[RetrievedChunk]:
-
-        # Gap 7: use cached encode to avoid redundant bge-large inference
         vec = list(self._cached_encode(query))
-
         results = self.client.query_points(
             collection_name = COLLECTION_NAME,
             query           = vec,
@@ -209,33 +280,40 @@ class HybridRetriever:
 
     # ── Sparse (BM25) retrieval ───────────────────────────────────────────────
 
+    def _bm25_query_weights(self, query: str) -> dict[int, float]:
+        """Query side of the Okapi BM25 decomposition:
+
+            w_q(t) = idf(t) * (qtf*(k3+1)) / (k3 + qtf)
+
+        The document side (term-frequency saturation and length
+        normalization) is baked into the stored vectors by
+        data/indexer.py, so the dot product of the two reproduces BM25
+        exactly. IDF appears here and ONLY here — the previous code applied
+        it on both sides, effectively squaring it.
+        """
+        qtf: dict[int, int] = {}
+        for t in bm25_tokenize(query):
+            idx = self.vocab.get(t)
+            if idx is not None:
+                qtf[idx] = qtf.get(idx, 0) + 1
+        return {
+            idx: self.idf.get(idx, 0.0) * (f * (BM25_K3 + 1.0)) / (BM25_K3 + f)
+            for idx, f in qtf.items()
+        }
+
     def _sparse_retrieve(
         self,
         query:   str,
         top_k:   int           = BM25_TOP_K,
         filters: Filter | None = None,
     ) -> list[RetrievedChunk]:
-
-        tokens  = bm25_tokenize(query)
-        # Gap 5 fix: apply IDF weighting to term frequencies so common terms
-        # like "act", "section", "the" don't dominate rare legal terms.
-        # Raw TF gives "act" appearing 3× the same weight as "dacoity" 1×;
-        # TF×IDF makes "dacoity" correctly outweigh the noise.
-        freq: dict[int, float] = {}
-        for t in tokens:
-            if t in self.vocab:
-                idx = self.vocab[t]
-                idf = self.idf.get(idx, 1.0)
-                freq[idx] = freq.get(idx, 0.0) + idf   # TF*IDF accumulation
-        indices = list(freq.keys())
-        values  = list(freq.values())
-
-        if not indices:
+        weights = self._bm25_query_weights(query)
+        if not weights:
             return []
-
         results = self.client.query_points(
             collection_name = COLLECTION_NAME,
-            query           = SparseVector(indices=indices, values=values),
+            query           = SparseVector(indices=list(weights.keys()),
+                                           values=list(weights.values())),
             using           = "sparse",
             query_filter    = filters,
             limit           = top_k,
@@ -246,123 +324,44 @@ class HybridRetriever:
     # ── Direct section lookup ─────────────────────────────────────────────────
 
     def _direct_section_lookup(self, query: str) -> list[RetrievedChunk]:
-        # Gap 10 fix: expanded from 6 acts to all 18 acts in the dataset.
-        # Queries like "BNS 103" or "POCSO Section 4" now trigger direct lookup.
-        ACT_CODE_MAP = {
-            "ipc":   "IPC",   "cpc":   "CPC",   "crpc":  "CRPC",
-            "ita":   "ITA",   "iea":   "IEA",   "coi":   "COI",
-            "bns":   "BNS",   "bnss":  "BNSS",  "bsa":   "BSA",
-            "sra":   "SRA",   "tpa":   "TPA",   "ica":   "ICA",
-            "ndps":  "NDPS",  "pca":   "PCA",   "pocso": "POCSO",
-            "scst":  "SCST",  "uapa":  "UAPA",  "la":    "LA",
-        }
-        # Extended pattern: captures all 18 act codes
-        pattern = re.findall(
-            r'\b(ipc|cpc|crpc|ita|iea|coi|bns|bnss|bsa|sra|tpa|ica|ndps|pca|pocso|scst|uapa|la)'
-            r'\s+(?:section\s+)?(\d+[a-zA-Z]*)\b',
-            query.lower()
-        )
-        chunks = []
-        seen: set[str] = set()
-        for act_abbr, sec_num in pattern:
-            act_code = ACT_CODE_MAP.get(act_abbr)
-            if not act_code:
+        """Exact "the user named this section" fast path.
+
+        Delegates parsing to data/section_ref.py, which handles both word
+        orders ("IPC 302" and "section 302 of the IPC"), multi-number runs
+        ("IPC 494 and 495" — the old regex silently kept only 494), letter
+        suffixes and the CRPC zero-padding exception. Resolution goes
+        through the in-memory SectionStore, so this costs no Qdrant calls
+        at all; it used to issue two full-collection scans per match per
+        query variant.
+        """
+        chunks, seen = [], set()
+        for sid in extract_section_refs(query, self.sections.section_ids):
+            if sid in seen:
                 continue
-
-            # BUGFIX: `pattern` was extracted from `query.lower()`, so a
-            # lettered section (e.g. user types "IPC 304A" or "304a") always
-            # arrived here lowercased ("304a") — but data/indexer.py stores
-            # both section_number ("304A") and section_id ("IPC_304A") with
-            # an UPPERCASE letter suffix (verified against final_dataset.json:
-            # every lettered entry, e.g. "29A", "120B", is upper). Strategy 1
-            # compared "304a" against stored "304A" and never matched.
-            # Strategy 2 was worse: `sec_num.zfill(3) if sec_num.isdigit()
-            # else sec_num` left ANY lettered sec_num both unpadded AND
-            # lowercase ("304a" instead of "304A"), since "304a".isdigit() is
-            # False. Together this meant the direct-lookup fast path — the
-            # one meant to GUARANTEE an exact section reference resolves —
-            # silently missed every lettered section: IPC_304A, IPC_498A,
-            # IPC_120B, IPC_366A among them, some of the most-cited sections
-            # in this dataset. Uppercase once, up front, and use it everywhere.
-            sec_num_norm = sec_num.upper()
-
-            # Strategy 1: look up by section_number field (stored as string,
-            # unpadded but uppercase, e.g. "1", "304A")
-            results1, _ = self.client.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(must=[
-                    FieldCondition(key="act_code",       match=MatchValue(value=act_code)),
-                    FieldCondition(key="section_number", match=MatchValue(value=sec_num_norm)),
-                ]),
-                limit=3, with_payload=True,
-            )
-
-            # Strategy 2: look up by section_id field (e.g. "IPC_001" for
-            # sec_num="1", "IPC_029A" for sec_num="29A"). Two more wrinkles
-            # beyond the case fix above, both confirmed against
-            # final_dataset.json directly:
-            #   1. `sec_num_norm.zfill(3)` pads the whole string by total
-            #      length, not the numeric part specifically — "29A" is
-            #      already 3 characters, so zfill(3) leaves it unchanged
-            #      ("29A") instead of the actually-stored "029A". Split the
-            #      digits from the letter suffix and zero-pad only the digits.
-            #   2. The zero-padding convention itself isn't universal: every
-            #      act pads section numbers to 3 digits in section_id EXCEPT
-            #      CRPC, whose section_id numeric widths are a genuine mix of
-            #      1/2/3 digits (unpadded, as authored). Try both the padded
-            #      and the raw form via MatchAny rather than guessing per act.
-            digits_letters = re.match(r'^(\d+)([A-Z]*)$', sec_num_norm)
-            if digits_letters:
-                digits, letters = digits_letters.groups()
-                target_ids = list({f"{act_code}_{digits.zfill(3)}{letters}",
-                                    f"{act_code}_{digits}{letters}"})
-            else:
-                target_ids = [f"{act_code}_{sec_num_norm}"]
-            results2, _ = self.client.scroll(
-                collection_name=COLLECTION_NAME,
-                scroll_filter=Filter(must=[
-                    FieldCondition(key="section_id", match=MatchAny(any=target_ids)),
-                ]),
-                limit=3, with_payload=True,
-            )
-
-            for r in list(results1) + list(results2):
-                sid = (r.payload or {}).get("section_id", str(r.id))
-                if sid not in seen:
-                    seen.add(sid)
-                    chunks.append(self._hit_to_chunk(r, default_score=1.0))
+            payload = self.sections.get(sid)
+            if payload:
+                seen.add(sid)
+                chunks.append(self._payload_to_chunk(payload, score=1.0))
         return chunks
 
     # ── Fetch by explicit section IDs (for section pinner) ───────────────────
 
     def fetch_by_ids(self, section_ids: list[str]) -> list[RetrievedChunk]:
-        """
-        Fetches sections directly by their section_id field in Qdrant.
-        Used by the section pinner to inject guaranteed sections into the pool.
-        Returns chunks in the same order as section_ids (skips any not found).
-        """
-        from qdrant_client.models import FieldCondition, MatchValue, Filter
-        chunks = []
-        seen:  set[str] = set()
-        for sid in section_ids:
-            if sid in seen:
+        """Sections by id, in the order given, skipping any that don't exist.
+        Served from the in-memory store — no Qdrant round-trip per id.
+        Accepts loose references ("IPC 2", "ipc 304a") as well as canonical
+        ids, so callers don't each need their own normalization."""
+        chunks, seen = [], set()
+        for raw in section_ids:
+            sid = raw if raw in self.sections else self.sections.resolve(raw)
+            if not sid or sid in seen:
                 continue
-            try:
-                results, _ = self.client.scroll(
-                    collection_name = COLLECTION_NAME,
-                    scroll_filter   = Filter(must=[
-                        FieldCondition(key="section_id", match=MatchValue(value=sid))
-                    ]),
-                    limit        = 1,
-                    with_payload = True,
-                )
-                if results:
-                    chunk = self._hit_to_chunk(results[0], default_score=1.0)
-                    chunk.rrf_score = 1.0   # treat as top-priority
-                    chunks.append(chunk)
-                    seen.add(sid)
-            except Exception:
-                pass   # section not found — skip silently
+            payload = self.sections.get(sid)
+            if payload:
+                seen.add(sid)
+                chunk = self._payload_to_chunk(payload, score=1.0)
+                chunk.rrf_score = 1.0     # treat as top-priority
+                chunks.append(chunk)
         return chunks
 
     # ── Hybrid retrieval ──────────────────────────────────────────────────────
@@ -373,81 +372,85 @@ class HybridRetriever:
         top_k:              int           = HYBRID_TOP_K,
         act_filter:         str | None    = None,
         status_filter:      str | None    = None,
-        dense_act_filter:   str | None    = None,   # Gap 9: separate filter for dense
+        dense_act_filter:   str | None    = None,
     ) -> list[RetrievedChunk]:
 
-        # ── Build sparse (BM25) filter — act filter applies here ──────────────
-        sparse_conditions = []
-        if status_filter:
-            sparse_conditions.append(
-                FieldCondition(key="status", match=MatchValue(value=status_filter.strip().title()))
-            )
-        if act_filter:
-            sparse_conditions.append(
-                FieldCondition(key="act_code", match=MatchValue(value=act_filter))
-            )
-        sparse_filter = Filter(must=sparse_conditions) if sparse_conditions else None
+        # Sparse gets the act filter (keyword false positives are common and
+        # the filter genuinely reduces noise); dense does not, so cross-act
+        # candidates — IPC_420 for a cybercrime query — survive to fusion.
+        def _build(status: str | None, act: str | None) -> Filter | None:
+            conditions = []
+            if status:
+                conditions.append(
+                    FieldCondition(key="status", match=MatchValue(value=status.strip().title()))
+                )
+            if act:
+                conditions.append(FieldCondition(key="act_code", match=MatchValue(value=act)))
+            return Filter(must=conditions) if conditions else None
 
-        # ── Build dense filter — Gap 9: no act filter on dense retrieval ──────
-        dense_conditions = []
-        if status_filter:
-            dense_conditions.append(
-                FieldCondition(key="status", match=MatchValue(value=status_filter.strip().title()))
-            )
-        if dense_act_filter:   # only applied if caller explicitly passes it
-            dense_conditions.append(
-                FieldCondition(key="act_code", match=MatchValue(value=dense_act_filter))
-            )
-        dense_filter = Filter(must=dense_conditions) if dense_conditions else None
+        sparse_filter = _build(status_filter, act_filter)
+        dense_filter  = _build(status_filter, dense_act_filter)
+
+        # Preserve caller order but drop exact duplicates — a repeated
+        # variant is not extra evidence, and with weighted fusion below it
+        # would otherwise consume a high-weight slot.
+        unique_queries = list(dict.fromkeys(q.strip() for q in queries if q and q.strip()))
 
         # ── Step 1: direct section hits (always included) ─────────────────────
-        direct_chunks = []
-        seen_ids: set[str] = set()
-        for query in queries:
+        direct_chunks, seen_ids = [], set()
+        for query in unique_queries:
             for chunk in self._direct_section_lookup(query):
                 if chunk.section_id not in seen_ids:
                     direct_chunks.append(chunk)
                     seen_ids.add(chunk.section_id)
 
-        # ── Step 2: BM25 + dense per query, merged via RRF ────────────────────
-        all_ranked_lists = []
-
-        for query in queries:
-            # Gap 9: dense uses dense_filter (no act restriction); sparse uses sparse_filter
-            dense_results  = self._dense_retrieve(query, top_k=DENSE_TOP_K,  filters=dense_filter)
+        # ── Step 2: per-variant dense+sparse fusion ──────────────────────────
+        # Within one query, dense and sparse are independent evidence about
+        # the same information need, so they fuse with equal weight.
+        per_query_rankings = []
+        for query in unique_queries:
+            dense_results  = self._dense_retrieve(query, top_k=DENSE_TOP_K, filters=dense_filter)
             sparse_results = self._sparse_retrieve(query, top_k=BM25_TOP_K, filters=sparse_filter)
-            per_query      = reciprocal_rank_fusion([dense_results, sparse_results])
-            all_ranked_lists.append(per_query)
+            per_query_rankings.append(
+                reciprocal_rank_fusion([dense_results, sparse_results])
+            )
 
-        # ── Step 3: merge semantic results via RRF, then pin direct hits on top ──
-        # Direct section hits (e.g. "ipc 1" → IPC_001) are exact matches by
-        # section number — they must appear in the final list regardless of how
-        # the IRAC reranker scores their content relevance.  Pinning them to the
-        # front (deduplicating against RRF results) guarantees they reach Stage 7.
+        # ── Step 3: cross-variant fusion, with decaying weight ───────────────
+        # Query variants are NOT independent evidence: Stage 2 of the
+        # pipeline generates them as paraphrases of one another, so summing
+        # them equally scores how redundantly a query was expanded. The
+        # first variant is the translated primary query and keeps full
+        # weight; later variants are recall boosters and contribute less,
+        # bottoming out at 0.35 rather than at zero so a section that only
+        # a late paraphrase reaches can still surface.
+        variant_weights = [max(0.35, 1.0 / (1.0 + 0.5 * i))
+                           for i in range(len(per_query_rankings))]
+
+        ranked_lists = list(per_query_rankings)
+        weights      = list(variant_weights)
         if direct_chunks:
-            all_ranked_lists.insert(0, direct_chunks)
+            # An explicitly named section outranks anything inferred.
+            ranked_lists.insert(0, direct_chunks)
+            weights.insert(0, 2.0)
 
-        rrf_results = reciprocal_rank_fusion(all_ranked_lists)
+        rrf_results = reciprocal_rank_fusion(ranked_lists, weights=weights)
 
         if direct_chunks:
             direct_ids = {c.section_id for c in direct_chunks}
-            # Put direct hits first (in discovery order), then the rest of RRF
-            pinned = list(direct_chunks)
-            rest   = [c for c in rrf_results if c.section_id not in direct_ids]
-            final  = pinned + rest
+            final = list(direct_chunks) + [c for c in rrf_results
+                                           if c.section_id not in direct_ids]
         else:
             final = rrf_results
 
         return final[:top_k]
 
-    # ── Helper ────────────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _hit_to_chunk(self, hit, default_score: float = 0.0) -> RetrievedChunk:
-        p = hit.payload or {}
+    def _payload_to_chunk(self, p: dict, score: float = 0.0) -> RetrievedChunk:
         return RetrievedChunk(
-            section_id       = p.get("section_id", str(hit.id)),
+            section_id       = p.get("section_id", ""),
             content          = p.get("content", ""),
-            score            = getattr(hit, "score", default_score),  # Record has no .score
+            score            = score,
             act_code         = p.get("act_code", ""),
             chapter          = p.get("chapter", ""),
             category         = p.get("category", ""),
@@ -465,12 +468,17 @@ class HybridRetriever:
             payload          = p,
         )
 
+    def _hit_to_chunk(self, hit, default_score: float = 0.0) -> RetrievedChunk:
+        chunk = self._payload_to_chunk(
+            hit.payload or {}, score=getattr(hit, "score", default_score),
+        )
+        if not chunk.section_id:
+            chunk.section_id = str(hit.id)
+        return chunk
+
 
 if __name__ == "__main__":
     retriever = HybridRetriever()
-    results   = retriever.retrieve(
-        queries=["punishment for cybercrime under IT Act"],
-        top_k=5,
-    )
+    results   = retriever.retrieve(queries=["punishment for cybercrime under IT Act"], top_k=5)
     for r in results:
         print(f"{r.section_id} | rrf={r.rrf_score:.4f} | {r.category}")

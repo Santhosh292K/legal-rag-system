@@ -1,46 +1,91 @@
 """
 data/bm25_tokenizer.py
 
-Single shared tokenizer for every place that builds or queries the BM25
-sparse index: data/indexer.py (vocab + corpus sparse vectors),
-data/build_bm25_idf.py (document frequency), and
-pipeline/hybrid_retriever.py (query-side sparse vectors).
+The single definition of what a token IS, shared by every place that
+builds or queries the BM25 index: data/indexer.py (vocabulary, IDF and
+corpus sparse vectors), pipeline/hybrid_retriever.py (query vectors) and
+pipeline/lexical.py (the reranker's lexical overlap).
 
-BUG this replaces: all three call sites used to do their own
-`text.lower().split()`. That's a whitespace split with no punctuation
-stripping, so "law." / "law," / "law" / "law?" are four different vocab
-entries. A spot check on the actual bm25_vocab.json found 3,950 of 9,286
-tokens (42.5%) had punctuation stuck to them ('applicability.', 'india.',
-'age.', 'company,', ...). Two concrete costs of that:
-  1. Corpus-side term frequency and document frequency are fragmented
-     across punctuation variants of the same word, so IDF is computed
-     over the wrong counts and TF is undercounted for any token that
-     ever appears before a comma/period in the source text.
-  2. Query-side tokens almost never carry the exact trailing punctuation
-     a corpus token happened to end up with, so a query like "Is this
-     legal?" tokenizes to "legal?", which cannot match the vocab entry
-     "legal" (or "legal." from some other sentence) at all — the token is
-     silently dropped from the BM25 query vector entirely.
-Benchmark queries in this project are full sentences ending in "?" or
-containing embedded clauses ("... at 17 years of age. Is this legal?"),
-so this bug was silently zeroing out BM25 signal on exactly the kind of
-query the benchmark uses.
+There is exactly one implementation on purpose. All three call sites used
+to do their own `text.lower().split()`, which is a whitespace split with
+no punctuation handling, so "law." / "law," / "law" / "law?" were four
+different vocabulary entries — 3,950 of 9,286 tokens (42.5%) in the
+resulting vocabulary had punctuation fused to them. Since a query rarely
+carries the exact trailing punctuation a corpus token happened to acquire,
+"Is this legal?" tokenized to "legal?" and could not match "legal" at all.
 
-Fix: tokenize on runs of alphanumerics only, so punctuation never attaches
-to a token on either the corpus or the query side.
+Changing anything in this file changes what every stored sparse vector
+MEANS. TOKENIZER_VERSION below is stamped into data/bm25_manifest.json by
+the indexer and checked at startup by pipeline/hybrid_retriever.py, so a
+change here forces a full re-index instead of silently corrupting
+retrieval:
 
-IMPORTANT: changing this changes vocab token IDs (via data/indexer.py's
-build_vocab), so after pulling this fix you must fully re-run
-`python3 data/indexer.py` (not just --rebuild-vocab) — it rebuilds
-bm25_vocab.json, bm25_idf.json, AND re-upserts every point's sparse
-vector so they all agree on the same token->id mapping. Running only
---rebuild-vocab would leave Qdrant's stored sparse vectors keyed to the
-OLD vocab ids while queries encode against the NEW ids, which is worse
-than not fixing this at all.
+    python3 data/indexer.py data/final_dataset.json
+
+(There is deliberately no partial rebuild. Regenerating the vocabulary
+without rewriting the stored vectors repoints every query at the wrong
+terms — see data/index_manifest.py.)
 """
 import re
 
+# Bump whenever tokenize() or build_search_text() changes what a token IS.
+# data/indexer.py stamps this into data/bm25_manifest.json and
+# pipeline/hybrid_retriever.py refuses to serve an index built under a
+# different value — see data/index_manifest.py for why that check exists.
+#   v2: punctuation-stripping + British/American spelling normalization
+#   v3: + Snowball (Porter2) stemming
+TOKENIZER_VERSION = 3
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# ── Stemming ────────────────────────────────────────────────────────────
+# Suffix stripping, so morphological variants of the same legal term match.
+# Statute text and the queries asked about it inflect differently by
+# nature: a section says "whoever wrongfully CONFINES", the user asks
+# about "wrongful CONFINEMENT"; a section prescribes what is "PUNISHABLE",
+# the query asks for the "PUNISHMENT". Without stemming those are
+# unrelated tokens and contribute nothing to either BM25 or the reranker's
+# lexical overlap.
+#
+# Measured on evaluation/benchmark_scenarios.json (50 queries with gold
+# sections), BM25-only, corpus and query tokenized identically:
+#
+#     recall@10   0.217 -> 0.245   (+0.028)
+#     recall@20   0.253 -> 0.273   (+0.020)
+#     recall@50   0.303 -> 0.343   (+0.040)
+#     MRR         0.222 -> 0.252   (+0.030)
+#     vocabulary  6109  -> 3896
+#
+# Snowball (Porter2) rather than a hand-rolled suffix stripper: it is the
+# standard algorithm, it is already a declared dependency via nltk, and
+# hand-rolled rules conflate unrelated legal terms in ways that are hard
+# to notice.
+#
+# Deliberately NOT wrapped in a try/except fallback. Silently tokenizing
+# differently when a dependency is missing is precisely the class of bug
+# this file's history is made of — a stemmed corpus queried with unstemmed
+# tokens is worse than either choice made consistently. Fail loudly
+# instead; the manifest check would catch it at startup anyway.
+try:
+    from nltk.stem.snowball import SnowballStemmer as _SnowballStemmer
+except ImportError as exc:                                  # pragma: no cover
+    raise ImportError(
+        "nltk is required for tokenization (Snowball stemming). "
+        "Install it with: pip install nltk"
+    ) from exc
+
+_STEMMER = _SnowballStemmer("english")
+_STEM_CACHE: dict[str, str] = {}
+
+
+def _stem(token: str) -> str:
+    """Memoized — the corpus has ~3.4k documents and the same tokens recur
+    constantly, and SnowballStemmer.stem is pure Python."""
+    stemmed = _STEM_CACHE.get(token)
+    if stemmed is None:
+        stemmed = _STEMMER.stem(token)
+        _STEM_CACHE[token] = stemmed
+    return stemmed
 
 # ── British/American spelling normalization ──────────────────────────────
 # BUG this closes: this corpus is written in Indian English (British
@@ -67,13 +112,9 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # queries, rather than a general spelling-normalization library, to avoid
 # conflating unrelated words.
 #
-# IMPORTANT: like the punctuation-stripping fix above, this changes which
-# token id a normalized word maps to versus the currently-built
-# bm25_vocab.json/bm25_idf.json (an existing corpus token "labor" — if any
-# ever occurs verbatim — would now normalize to "labour" and merge with
-# that entry). Re-run `python3 data/indexer.py` (full rebuild, not
-# --rebuild-vocab alone) after pulling this change, for the same reason
-# described above.
+# Mapped to the corpus's own (British) spelling. Applied BEFORE stemming,
+# because Snowball does not conflate the variants by itself
+# ("organization" -> "organ" but "organisation" -> "organis").
 _US_TO_UK: dict[str, str] = {
     "labor": "labour", "labors": "labours", "labored": "laboured", "laboring": "labouring",
     "defense": "defence", "defenses": "defences",
@@ -96,20 +137,24 @@ _US_TO_UK: dict[str, str] = {
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase, punctuation-stripped, spelling-normalized tokenization.
-    Returns a list (preserves repeats, so callers doing raw term-frequency
-    counts don't need to change); wrap in set(...) where only membership is
-    needed."""
+    """Lowercase -> punctuation-stripped -> spelling-normalized -> stemmed.
+
+    Order matters: spelling normalization must run BEFORE stemming,
+    because Snowball does not conflate the variants itself
+    ("organization" -> "organ" but "organisation" -> "organis").
+
+    Returns a list (repeats preserved, so callers computing raw term
+    frequency don't need to change); wrap in set(...) where only
+    membership is needed.
+    """
     tokens = _TOKEN_RE.findall(text.lower())
-    return [_US_TO_UK.get(t, t) for t in tokens]
+    return [_stem(_US_TO_UK.get(t, t)) for t in tokens]
 
 
 def build_search_text(record: dict) -> str:
     """The text actually used for BOTH BM25 vocabulary/sparse-vector
     construction AND dense embedding — by data/indexer.py at index time and
-    data/build_bm25_idf.py for document-frequency counting, so the two stay
-    consistent with each other and with what pipeline/hybrid_retriever.py's
-    query side searches against.
+    pipeline/hybrid_retriever.py's query side, so all three agree.
 
     BUGFIX: every record carries a hand-curated `meta.keywords` list
     specifically meant to bridge lay-language query vocabulary to the
@@ -128,10 +173,6 @@ def build_search_text(record: dict) -> str:
     clear the bar on dense semantic similarity alone — which it did not,
     in production, even though a same-topic query using "dowry" (a word
     that DOES appear in the section's own text) retrieved it easily.
-    build_bm25_idf.py's own old comment ("embedding_text is the richer
-    field (includes ... keywords)") already assumed this was true; it
-    wasn't, until now.
-
     Appends keywords to embedding_text/content for indexing purposes only
     — does not mutate the record, so record["embedding_text"] still stores
     the clean act/section/content text wherever it's used for display.

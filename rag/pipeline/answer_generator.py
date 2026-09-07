@@ -13,7 +13,10 @@ sys.path.append(str(Path(__file__).parent.parent))
 from config import FINAL_TOP_K, RERANK_TOP_K
 from pipeline.irac_reranker     import RankedChunk
 from pipeline.intent_classifier import QueryIntent
-from pipeline.section_pinner    import PIN_EXPLANATION
+from pipeline.section_pinner    import (
+    PIN_EXPLANATION, ROCCHIO_EXPLANATION, KG_EXPLANATION_PREFIX,
+)
+from data.section_ref           import find_section_spans
 
 from config import OLLAMA_ANSWER_MODEL
 
@@ -43,9 +46,13 @@ class LegalAnswer:
     intent:       str            = ""
     confidence:   str            = "medium"
     irac_summary: dict           = field(default_factory=dict)
-    # Gap 23: section IDs actually in the reranker's top-K list, not just
-    # those the LLM chose to cite. Evaluators use this for true retrieval recall.
+    # Sections actually placed in the generator's prompt — the honest
+    # denominator for retrieval metrics, and a superset of `citations`
+    # (which is only what the model chose to cite).
     retrieved_section_ids: list[str] = field(default_factory=list)
+    # The wider post-rerank pool, for failure diagnosis only. Never use
+    # this for reported recall/precision: the generator never saw it.
+    candidate_section_ids: list[str] = field(default_factory=list)
 
 
 ANSWER_PROMPT = """You are a precise legal assistant specializing in Indian law.
@@ -191,55 +198,70 @@ Answer the question directly:"""
 
 class AnswerGenerator:
 
+    # At most this fraction of the final context may be handed to the
+    # "guaranteed slot" channels (pinner, Rocchio, KG). See _select_top.
+    MAX_RESERVED_FRACTION = 0.5
+
     @staticmethod
     def _select_top(ranked: list[RankedChunk], top_k: int) -> list[RankedChunk]:
-        """Replaces the old `ranked[:top_k]` positional slice, which silently
-        dropped every pinned/re-injected section: main.py appends pinned
-        sections to the END of `ranked` (see 'Pinned section rescue' there),
-        so a plain slice of the first top_k items never even considered
-        them, regardless of how many were correctly pinned. Pinned sections
-        are guaranteed a spot here — the whole point of pinning is that
-        they're not supposed to be droppable by a slot-count cap — with any
-        remaining budget filled by the next highest-scoring non-pinned
-        chunks. If pinned sections alone exceed top_k, all of them still
-        get included; the context just runs a bit longer than top_k for
-        that query, which is the correct tradeoff over silently dropping a
-        deterministically-identified relevant section.
+        """Choose the sections that go into the prompt.
 
-        BUGFIX: Rocchio feedback (main.py Stage 6.5) and KG augmentation
-        (Stage 6.75) exist for the same reason pinning does — to rescue a
-        section the earlier stages missed — but they were appended to
-        `ranked` with a flat discounted score (0.30 / 0.35) and then made
-        to compete purely on final_score against a list that, by this
-        point, is usually already sitting at RERANK_TOP_K candidates whose
-        scores were mostly earned via real IRAC/LLM/cross-encoder scoring.
-        A flat 0.30-0.35 rarely clears that bar, so these two stages could
-        successfully find a missed gold section (visible in the
-        'post_rocchio'/'post_kg' debug_trace stages) and then lose it again
-        right here — confirmed against the diagnose_recall.py run this was
-        written from (IPC_505: present at post_kg, absent from final).
-        Running the stage at all only pays off if a slot here can't be
-        stolen back by score alone, so — same reasoning as pinning — give
-        Rocchio/KG additions a reserved slot too, ranked among themselves
-        by their (still-discounted) score so a stronger rescued match still
-        wins over a weaker one when both are competing for reserved space."""
-        def _is_reserved(r: "RankedChunk") -> bool:
-            return (r.explanation == PIN_EXPLANATION
-                    or r.explanation == "Rocchio pseudo-relevance feedback"
-                    or r.explanation.startswith("KG-augmented"))
+        Three channels can inject a section that the reranker did not rank
+        highly, each for a legitimate reason:
+          * the section pinner (deterministic high-confidence dense match),
+          * Rocchio pseudo-relevance feedback,
+          * KG graph expansion.
+        A plain ``ranked[:top_k]`` positional slice dropped all three,
+        because main.py appends them to the END of the list — so the
+        stages ran, found the section, and lost it again here.
 
-        pinned      = [r for r in ranked if r.explanation == PIN_EXPLANATION]
-        rescued     = sorted(
-            (r for r in ranked if _is_reserved(r) and r.explanation != PIN_EXPLANATION),
-            key=lambda r: r.final_score, reverse=True,
-        )
-        reserved    = pinned + rescued
-        others      = sorted(
-            (r for r in ranked if not _is_reserved(r)),
-            key=lambda r: r.final_score, reverse=True,
-        )
-        remaining   = max(0, top_k - len(reserved))
-        return reserved + others[:remaining]
+        Reserving slots for them fixes that, but reserving WITHOUT A CAP
+        replaced one bug with a worse one. The pinner returns up to 6,
+        Rocchio 3 and the KG 4 — 13 against FINAL_TOP_K=10, leaving zero
+        slots for anything the reranker actually scored. The case-fusion
+        path is worse still: fusion.py feeds up to 15 keyword-index matches
+        plus every section cited in the uploaded documents through the same
+        pinned channel, so a single FIR could fill the entire context with
+        pinned sections ordered by pin priority rather than relevance.
+
+        So: reserved channels get at most half the budget, ranked among
+        themselves by score, and the remainder always goes to the
+        reranker's own ordering. Pins outrank other rescues within the
+        reserved half because they are the strongest deterministic signal.
+        """
+        def _channel(r: "RankedChunk") -> str:
+            if r.explanation == PIN_EXPLANATION:
+                return "pin"
+            if r.explanation == ROCCHIO_EXPLANATION:
+                return "rescue"
+            if r.explanation.startswith(KG_EXPLANATION_PREFIX):
+                return "rescue"
+            return "ranked"
+
+        pinned  = sorted((r for r in ranked if _channel(r) == "pin"),
+                         key=lambda r: r.final_score, reverse=True)
+        rescued = sorted((r for r in ranked if _channel(r) == "rescue"),
+                         key=lambda r: r.final_score, reverse=True)
+        others  = sorted((r for r in ranked if _channel(r) == "ranked"),
+                         key=lambda r: r.final_score, reverse=True)
+
+        max_reserved = max(1, int(top_k * AnswerGenerator.MAX_RESERVED_FRACTION))
+        reserved     = (pinned + rescued)[:max_reserved]
+
+        selected = reserved + others[:max(0, top_k - len(reserved))]
+
+        # If the reranked pool was too small to use the whole budget, let
+        # the leftover reserved candidates take the slack rather than
+        # returning a short context.
+        if len(selected) < top_k:
+            already = {id(r) for r in selected}
+            for r in pinned + rescued + others:
+                if len(selected) >= top_k:
+                    break
+                if id(r) not in already:
+                    selected.append(r)
+                    already.add(id(r))
+        return selected
 
     def _build_context(self, ranked: list[RankedChunk], top_k: int) -> str:
         parts = []
@@ -260,83 +282,40 @@ class AnswerGenerator:
         return "\n---\n".join(parts)
 
     def _normalize_citations(self, answer_text: str, known_ids: frozenset[str] = frozenset()) -> str:
-        """Gap 19: normalize alternate citation styles to [ACT_NNN] bracket form
-        before extraction so they're not silently lost.
+        """Rewrite prose-style citations into canonical [ACT_NNN] form so
+        they are not lost during extraction.
 
-        Handles:
-          - (Section 302 IPC) / (Sec. 302 IPC)
-          - u/s 302 IPC / u/s. 302
-          - IPC Section 302 / under Section 302 of IPC
-          - Section 66B of IT Act
-        All are converted to [IPC_302] / [ITA_066B] canonical form.
+        Handles "(Section 302 IPC)", "u/s 302 IPC", "Section 66B of the IT
+        Act", "IPC Section 302" and multi-number runs.
 
-        known_ids: the real section_ids actually in play for this answer
-        (ranked's chunk.section_id set) — see _fmt_sec for why this matters
-        beyond just the usual zero-pad guess.
+        Parsing is delegated to data/section_ref.py — the same code the
+        retriever and reranker use — instead of three bespoke regexes.
+        Those regexes accepted ANY lowercase word as the act name, so
+        "Section 302 defines murder" was rewritten to "[DEFINES_302]" and
+        "Section 302 of the Indian Penal Code, 1860" to "[INDIAN_302]".
+        Bogus ids were then dropped by the known-id check, which is why the
+        visible symptom was missing citations on exactly the multi-word act
+        names a model is most likely to write out in full.
+
+        Only rewrites a span that resolves to a section actually offered to
+        the model, so this can never invent a citation.
         """
-        import re as _re
-        ACT_ALIAS = {
-            "ipc": "IPC", "indian penal code": "IPC",
-            "cpc": "CPC", "civil procedure code": "CPC",
-            "crpc": "CRPC", "cr.p.c": "CRPC",
-            "ita": "ITA", "it act": "ITA", "information technology act": "ITA",
-            "iea": "IEA", "evidence act": "IEA",
-            "bns": "BNS", "bnss": "BNSS", "bsa": "BSA",
-            "pocso": "POCSO", "ndps": "NDPS", "scst": "SCST",
-            "coi": "COI", "constitution": "COI",
-        }
+        if not answer_text:
+            return answer_text
 
-        def _map_act(name: str) -> str:
-            return ACT_ALIAS.get(name.lower().strip(), name.upper().strip())
+        spans = find_section_spans(answer_text, known_ids)
+        if not spans:
+            return answer_text
 
-        def _fmt_sec(sec: str, act: str) -> str:
-            # BUGFIX: this left a lettered section (e.g. "29a" from "Section
-            # 29a IPC") lowercase and unpadded — sec_clean.isdigit() is False
-            # whenever a letter is present, so the zfill branch never ran for
-            # exactly the sections that need it most. The real indexed IDs
-            # (final_dataset.json) are uppercase with the numeric part
-            # zero-padded to 3 digits BEFORE the letter suffix — "IPC_029A",
-            # not "IPC_29a" or "IPC_29A". _extract_citations matches this
-            # normalized bracket form against chunk.section_id verbatim, so a
-            # mismatch here silently dropped an otherwise-correct citation
-            # the model wrote in prose form instead of bracket form.
-            sec_clean = (sec.strip().lstrip("0") or "0").upper()
-            m = _re.match(r'^(\d+)([A-Z]?)$', sec_clean)
-            if m:
-                digits, letter = m.groups()
-                padded, raw = f"{digits.zfill(3)}{letter}", f"{digits}{letter}"
-                # Every act zero-pads to 3 digits in section_id EXCEPT CRPC,
-                # whose section_ids are a genuine mix of 1/2/3-digit widths
-                # (confirmed against final_dataset.json — unpadded, as
-                # authored). Rather than hardcode that one exception, prefer
-                # whichever candidate is an ACTUAL section_id among this
-                # answer's retrieved chunks; only guess (zero-padded) when
-                # neither is known, same as before this fix.
-                if f"{act}_{raw}" in known_ids:
-                    sec_clean = raw
-                else:
-                    sec_clean = padded
-            return f"[{act}_{sec_clean}]"
-
-        # Pattern: (Section 302 IPC) or (Sec 302 IPC)
-        text = _re.sub(
-            r'\((?:sec(?:tion)?\.?\s+)(\d+[a-z]?)\s+([a-z .]+?)\)',
-            lambda m: _fmt_sec(m.group(1), _map_act(m.group(2))),
-            answer_text, flags=_re.IGNORECASE
-        )
-        # Pattern: under Section 302 of the IPC / under IPC Section 302
-        text = _re.sub(
-            r'(?:under\s+)?(?:section\s+)(\d+[a-z]?)\s+(?:of\s+(?:the\s+)?)?([a-z .]+?)(?=[,;. ])',
-            lambda m: _fmt_sec(m.group(1), _map_act(m.group(2))),
-            text, flags=_re.IGNORECASE
-        )
-        # Pattern: u/s 302 IPC / u/s. 66B ITA
-        text = _re.sub(
-            r'u/s\.?\s+(\d+[a-z]?)\s+([A-Za-z]+)',
-            lambda m: _fmt_sec(m.group(1), _map_act(m.group(2))),
-            text, flags=_re.IGNORECASE
-        )
-        return text
+        out, cursor = [], 0
+        for start, end, section_ids in spans:
+            if start < cursor:          # overlapping match — keep the first
+                continue
+            out.append(answer_text[cursor:start])
+            out.append("".join(f"[{sid}]" for sid in section_ids))
+            cursor = end
+        out.append(answer_text[cursor:])
+        return "".join(out)
 
     def _extract_citations(self, answer_text: str, shown: list[RankedChunk]) -> list[Citation]:
         # BUGFIX: this used to be called with the full `ranked` list (up to
@@ -564,23 +543,19 @@ class AnswerGenerator:
         if weak_retrieval:
             confidence = "low"
         irac_sum   = self._build_irac_summary(ranked, top_k, citations=citations)
-        # Gap 23: capture the actual reranker top-K section IDs (not just
-        # what the LLM cited) so the evaluator can measure true retrieval recall.
+        # What the model was ACTUALLY shown. Retrieval metrics must be
+        # measured against this, not against a wider pool.
         #
-        # BUGFIX: this used to slice with `top_k` (== FINAL_TOP_K == 8), the
-        # same cutoff used to build the LLM's answer context. That meant
-        # retrieved_section_ids never had more than 8 entries, so every
-        # "@10" metric downstream (recall_at_k/precision_at_k/ndcg_at_k with
-        # k=10 in evaluation/evaluate.py) was silently evaluated against an
-        # 8-item list — recall@10 could never differ from recall@8, and
-        # precision@10 was deflated by dividing by a k the list could never
-        # reach. Report against the fuller RERANK_TOP_K pool (the output of
-        # the IRAC reranker, before the answer-generation cutoff) instead,
-        # so retrieval metrics reflect what the reranker actually surfaced.
-        # This does NOT change what the LLM sees or cites — only what's
-        # exposed for evaluation — so answer quality/latency are unaffected.
-        report_k      = max(top_k, RERANK_TOP_K)
-        retrieved_ids = [r.chunk.section_id for r in self._select_top(ranked, report_k)]
+        # BUGFIX: this used to report `max(top_k, RERANK_TOP_K)` == 20
+        # sections while the prompt only ever contained top_k == 10, so
+        # every "@10" metric in evaluation/evaluate.py was really "@10 of
+        # the top 20" — recall@10 could count a section the generator never
+        # saw and could not possibly have cited. The broader pool is still
+        # exposed, as candidate_section_ids, for failure diagnosis; it is
+        # just no longer reported as the served result.
+        retrieved_ids = [r.chunk.section_id for r in top]
+        candidate_ids = [r.chunk.section_id
+                         for r in self._select_top(ranked, max(top_k, RERANK_TOP_K))]
 
         return LegalAnswer(
             query        = query,
@@ -591,6 +566,7 @@ class AnswerGenerator:
             confidence   = confidence,
             irac_summary = irac_sum,
             retrieved_section_ids = retrieved_ids,
+            candidate_section_ids = candidate_ids,
         )
 
     def _build_case_context(self, case_chunks: list[dict]) -> str:

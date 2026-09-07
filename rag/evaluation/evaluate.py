@@ -385,7 +385,12 @@ class LegalRAGEvaluator:
                 elapsed = time.time() - t0
                 latency_l.append(elapsed)
 
-                # Retrieve section list from reranker (not LLM citations)
+                # Sections the generator was ACTUALLY shown. Not the
+                # wider post-rerank pool: reporting against that made
+                # every "@k" metric here "@k of the top RERANK_TOP_K",
+                # so recall@10 could credit a section the generator never
+                # saw and could not have cited. answer.candidate_section_ids
+                # still exposes the wider pool for diagnose_recall.py.
                 retrieved_ids = (
                     answer.retrieved_section_ids
                     if answer.retrieved_section_ids
@@ -742,14 +747,22 @@ class LegalRAGEvaluator:
             if self.pipeline.reranker is not None else None
         )
 
+        # One in-memory corpus index for every variant: without it each of
+        # the seven pipelines scrolls the whole collection to build its own
+        # identical copy.
+        shared_sections = getattr(self.pipeline, "sections", None)
+
         results = []
         try:
             for name, flags in ablation_configs:
                 print(f"\n  ▶ {name}")
                 try:
-                    pipe = LegalRAGPipeline(verbose=False, qdrant_client=shared_client,
-                                             embed_model=shared_embed_model,
-                                             cross_encoder=shared_cross_encoder, **flags)
+                    pipe = LegalRAGPipeline(verbose=False,
+                                            qdrant_client=shared_client,
+                                            section_store=shared_sections,
+                                            embed_model=shared_embed_model,
+                                            cross_encoder=shared_cross_encoder,
+                                            **flags)
                     evl  = LegalRAGEvaluator(pipe)
                     results.append(evl.evaluate(benchmark_path, system_name=name, use_llm_judge=use_llm_judge))
                 except Exception as e:

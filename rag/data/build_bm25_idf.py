@@ -1,109 +1,109 @@
 """
-data/build_bm25_idf.py
+data/build_bm25_idf.py — now a READ-ONLY verifier.
 
-Computes REAL BM25 IDF weights from document frequency across the corpus,
-replacing the encounter-order approximation that used to live inline in
-HybridRetriever (see the old "Gap 5" comment in pipeline/hybrid_retriever.py).
+This script used to rebuild data/bm25_idf.json from data/bm25_vocab.json
+independently of the indexer. That is a footgun, and it fired: BM25 sparse
+vectors are keyed by integer token ids that only mean anything relative to
+the vocabulary they were built with, so regenerating vocabulary or IDF
+without also rewriting every stored vector leaves queries and corpus in
+two different index spaces. Retrieval then degrades to noise with no error
+anywhere.
 
-The old approximation assumed vocab.json's insertion order correlates with
-term rarity ("tokens built into the vocab earlier tend to be more common").
-That's a coincidence of how the indexer happened to iterate records, not a
-real signal — it doesn't reflect how many *sections* actually contain each
-token, which is what document frequency needs to measure.
+That is exactly the state this repository shipped in — stored vectors from
+one tokenizer, a vocabulary file from a second, running code implying a
+third, with measured index-set agreement of ~15%.
 
-This script computes true df(token) = number of sections whose text
-contains that token, over the same corpus + tokenization the vocab was
-built from, then writes a token_index -> idf mapping to
-data/bm25_idf.json. HybridRetriever loads that file if present and only
-falls back to the old approximation if it's missing, so this is a
-non-breaking, opt-in improvement.
+So it no longer writes anything. data/indexer.py writes the vocabulary,
+the IDF table, the Qdrant vectors and the manifest in one run; this script
+only checks that what is on disk is self-consistent and tells you what to
+run if it isn't.
 
 Usage:
-    python3 data/build_bm25_idf.py
+    python3 data/build_bm25_idf.py        # verify; exit 1 on mismatch
 """
 import json
-import math
 import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
-from data.bm25_tokenizer import tokenize as _tokenize, build_search_text
+from data.bm25_tokenizer import tokenize, build_search_text, TOKENIZER_VERSION
+from data.index_manifest import (
+    read_manifest, corpus_fingerprint, vocab_fingerprint,
+    INDEX_FORMAT_VERSION, IndexMismatchError,
+)
 
-HERE        = Path(__file__).parent
-VOCAB_PATH  = HERE / "bm25_vocab.json"
-DATA_PATH   = HERE / "final_dataset.json"
-OUT_PATH    = HERE / "bm25_idf.json"
-
-
-def tokenize(text: str) -> set[str]:
-    # Shared tokenizer (data/bm25_tokenizer.py) so query-side, corpus-side,
-    # and this idf computation all agree on the same token boundaries —
-    # previously this used a local `text.lower().split()` copy that, like
-    # the other two call sites, split off punctuation-fused tokens instead
-    # of matching the real word.
-    return set(_tokenize(text))
+HERE       = Path(__file__).parent
+VOCAB_PATH = HERE / "bm25_vocab.json"
+IDF_PATH   = HERE / "bm25_idf.json"
+DATA_PATH  = HERE / "final_dataset.json"
 
 
-def main():
-    with open(VOCAB_PATH, "r") as f:
-        vocab: dict[str, int] = json.load(f)
+def verify() -> list[str]:
+    """Returns a list of problems; empty means consistent."""
+    problems: list[str] = []
 
-    with open(DATA_PATH, "r") as f:
-        records = json.load(f)
+    manifest = read_manifest(HERE)
+    if manifest is None:
+        return ["data/bm25_manifest.json is missing — the index predates "
+                "consistency checking, or was never built."]
 
-    n_docs = len(records)
-    df = [0] * len(vocab)
+    if manifest.get("index_format_version") != INDEX_FORMAT_VERSION:
+        problems.append(
+            f"index format v{manifest.get('index_format_version')} on disk, "
+            f"code expects v{INDEX_FORMAT_VERSION}")
+    if manifest.get("tokenizer_version") != TOKENIZER_VERSION:
+        problems.append(
+            f"index built with tokenizer v{manifest.get('tokenizer_version')}, "
+            f"code tokenizes as v{TOKENIZER_VERSION}")
 
-    for rec in records:
-        # BUGFIX: this comment used to claim embedding_text already
-        # includes keywords — it doesn't (verified directly against
-        # final_dataset.json), so this was silently computing document
-        # frequency over a narrower text than what a fixed indexer.py now
-        # actually builds the vocab from. build_search_text is the single
-        # shared definition of "the text a record is indexed on" — see its
-        # docstring in bm25_tokenizer.py — used identically here and in
-        # data/indexer.py so query-side IDF (this file's output) and
-        # corpus-side vectors (indexer.py's) agree on the same vocabulary.
-        text = build_search_text(rec)
-        for tok in tokenize(text):
-            idx = vocab.get(tok)
-            if idx is not None:
-                df[idx] += 1
+    if not VOCAB_PATH.exists():
+        problems.append(f"{VOCAB_PATH.name} is missing")
+    else:
+        with open(VOCAB_PATH) as f:
+            vocab = json.load(f)
+        if vocab_fingerprint(vocab) != manifest.get("vocab_fingerprint"):
+            problems.append(f"{VOCAB_PATH.name} does not match the manifest")
+        if not IDF_PATH.exists():
+            problems.append(f"{IDF_PATH.name} is missing")
+        else:
+            with open(IDF_PATH) as f:
+                idf = json.load(f)
+            if len(idf) != len(vocab):
+                problems.append(
+                    f"{IDF_PATH.name} has {len(idf)} entries for a "
+                    f"{len(vocab)}-token vocabulary")
 
-    # Standard Okapi BM25 IDF: log(1 + (N - df + 0.5) / (df + 0.5))
-    # - For df=N (a term in every section), this -> ~log(1 + tiny) ≈ 0. That
-    #   matters a lot in a corpus this homogeneous: legal boilerplate like
-    #   "section", "act", "provision" appears in most records, and needs to
-    #   contribute close to nothing to the score.
-    # - For rare terms (small df), this stays high (log(1 + ~N/df)).
-    # - Always >= 0 for df in [1, N], so no separate floor/clipping needed.
-    #
-    # (An earlier version of this script used the generic TF-IDF smoothing
-    # log((N+1)/(df+1)) + 1, which floors EVERY term's weight at 1.0 even
-    # when it appears in 100% of sections — that floor turned out to matter:
-    # it kept boilerplate terms contributing real score in a corpus this
-    # repetitive, and measurably hurt retrieval quality end-to-end. The
-    # formula below is the one actually used in Okapi BM25, not a
-    # substitute — use this one.)
-    max_idf = math.log(1 + (n_docs - 0 + 0.5) / (0 + 0.5))  # df=0 fallback: treat as maximally rare
-    idf = {}
-    for tok, idx in vocab.items():
-        d = df[idx]
-        idf[str(idx)] = math.log(1 + (n_docs - d + 0.5) / (d + 0.5)) if d > 0 else max_idf
+    if DATA_PATH.exists():
+        with open(DATA_PATH, encoding="utf-8") as f:
+            records = json.load(f)
+        ids   = [r["section"] for r in records]
+        texts = [build_search_text(r) for r in records]
+        if corpus_fingerprint(ids, texts) != manifest.get("corpus_fingerprint"):
+            problems.append(
+                "final_dataset.json has changed since the index was built")
 
-    with open(OUT_PATH, "w") as f:
-        json.dump(idf, f)
+    return problems
 
-    # Sanity spot-check: common legal filler vs a rare term, so you can eyeball
-    # that the ordering makes sense before trusting it downstream.
-    sample_common = vocab.get("section")
-    sample_rare   = next((v for k, v in vocab.items() if k in ("dacoity", "pocso")), None)
-    print(f"[build_bm25_idf] {n_docs} docs, {len(vocab)} vocab tokens -> {OUT_PATH}")
-    if sample_common is not None:
-        print(f"  idf('section') = {idf[str(sample_common)]:.3f}  (should be LOW — appears in most sections)")
-    if sample_rare is not None:
-        print(f"  idf(rare term) = {idf[str(sample_rare)]:.3f}  (should be HIGH — appears in few sections)")
+
+def main() -> int:
+    problems = verify()
+    if not problems:
+        manifest = read_manifest(HERE) or {}
+        print("[verify] BM25 index is consistent.")
+        print(f"  built      : {manifest.get('built_at', '?')}")
+        print(f"  vocabulary : {manifest.get('vocab_size', '?')} tokens")
+        print(f"  documents  : {manifest.get('n_docs', '?')}  "
+              f"avgdl={manifest.get('avgdl', '?')}")
+        print(f"  bm25       : k1={manifest.get('bm25_k1')} b={manifest.get('bm25_b')}")
+        return 0
+
+    print("[verify] BM25 index is INCONSISTENT:")
+    for problem in problems:
+        print(f"  - {problem}")
+    print()
+    print(IndexMismatchError.REMEDY)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

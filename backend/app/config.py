@@ -63,11 +63,19 @@ def bootstrap_rag() -> None:
     # surfaces as a bare FileNotFoundError several frames deep inside
     # HybridRetriever/CaseIndexer with no indication of *why*. Fail fast
     # here instead, with a message that says what to run.
+    # Every BM25 artifact is written by a single indexer run, together, so
+    # they can't drift apart — which is why they all name the same command
+    # here. (They used to point at data/build_bm25_idf.py, a partial
+    # rebuild that wrote a vocabulary WITHOUT rewriting the stored vectors;
+    # doing that leaves queries and corpus in different index spaces and
+    # silently destroys retrieval. That script no longer writes anything.)
+    _REINDEX = "python data/indexer.py data/final_dataset.json"
     required = {
-        "rag/data/final_dataset.json": "python data/csv_to_json.py data/dataset.csv data/final_dataset.json",
-        "rag/data/bm25_vocab.json":    "python data/build_bm25_idf.py",
-        "rag/data/bm25_idf.json":      "python data/build_bm25_idf.py",
-        "rag/qdrant_db":               "python data/indexer.py data/final_dataset.json",
+        "rag/data/final_dataset.json":  "python data/csv_to_json.py data/dataset.csv data/final_dataset.json",
+        "rag/data/bm25_vocab.json":     _REINDEX,
+        "rag/data/bm25_idf.json":       _REINDEX,
+        "rag/data/bm25_manifest.json":  _REINDEX,
+        "rag/qdrant_db":                _REINDEX,
     }
     missing = [
         (rel, cmd) for rel, cmd in required.items()
