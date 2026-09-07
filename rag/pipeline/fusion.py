@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from pipeline.alea import ALEA, entities_to_facts, SectionScore
 from pipeline.section_pinner import SectionPinner
 from pipeline.keyword_index import KeywordIndex
+from data.section_ref import extract_section_refs
 
 SECTION_ID_PATTERN = re.compile(r"\b[A-Z]{2,6}_[A-Z0-9]+(?:_[A-Z0-9]+)*\b")
 
@@ -50,82 +51,84 @@ class FusedResult:
     alea_scores:     list[SectionScore] = field(default_factory=list)   # Phase 3/4
 
 
-def _sections_from_case_narrative(case_chunks: list[dict], pinner: SectionPinner,
-                                   keyword_index: KeywordIndex | None = None) -> list[str]:
-    """Runs BOTH deterministic section-finding layers against the case
-    document's own text: section_pinner's semantic search against the
-    indexed statute corpus (catches phrasing variants — 'abducted'/
-    'kidnapped'/'taken away forcibly' all land near the same sections in
-    embedding space), and the dataset-driven keyword index (catches exact
-    dataset-authored terms no embedding match is guaranteed to surface,
-    like IPC_364A's 'kidnapping for ransom' — see keyword_index.py for why
-    this matters). Neither replaces the other; they catch different gaps.
-    Scans every retrieved chunk's text, not just 'incident'-role ones —
-    an FIR's 'Offences Invoked' line (a goldmine of exactly these words)
-    lands in the chunker's 'sections' role, not 'incident'."""
-    text = " ".join(c.get("text", "") for c in case_chunks)
-    if not text.strip():
+# How many sections the narrative layer may contribute. The pinner and the
+# keyword index between them can nominate 20+ sections for one uploaded
+# FIR; every one of those becomes a "guaranteed" slot downstream, so an
+# uncapped list crowds the reranker out of the answer context entirely.
+# answer_generator._select_top enforces a second, harder cap, but keeping
+# the list short here also keeps the pinned-chunk fetch and the temporal
+# filter honest about what they are working on.
+MAX_NARRATIVE_SECTIONS = 8
+
+
+def _sections_from_case_narrative(
+    case_chunks: list[dict],
+    pinner: SectionPinner,
+    keyword_index: KeywordIndex | None = None,
+) -> list[str]:
+    """Sections implied by what the case documents actually say.
+
+    Two independent layers, because they fail differently: section_pinner
+    does dense search against the indexed statute corpus (catches phrasing
+    variants — "abducted"/"kidnapped"/"taken away forcibly"), while the
+    keyword index matches the dataset's own authored keywords exactly
+    (catches terms like IPC_364A's "kidnapping for ransom" regardless of
+    where the embedding happens to land).
+
+    BUGFIX: this used to join EVERY retrieved chunk's text into one string
+    and embed that once. bge-large truncates at 512 tokens with no warning,
+    so for any real FIR + charge sheet the pin decision was made from
+    roughly the first 2 KB and the rest of the case was silently discarded.
+    Pin per chunk and merge instead — chunks are already sized for the
+    encoder — keeping each chunk's best-scoring pins and preserving
+    document order.
+    """
+    texts = [c.get("text", "") for c in case_chunks if c.get("text", "").strip()]
+    if not texts:
         return []
 
-    pinned = pinner.pin(text).section_ids
-    keyword_matched = keyword_index.section_ids(text) if keyword_index else []
+    pinned: list[str] = []
+    for text in texts:
+        for sid in pinner.pin(text).section_ids:
+            if sid not in pinned:
+                pinned.append(sid)
 
-    # Semantic pins first (highest precision), then keyword-index matches,
-    # deduped preserving order.
-    return list(dict.fromkeys(pinned + keyword_matched))
+    # The keyword index has no length limit, so it can still run over the
+    # whole document at once.
+    keyword_matched = keyword_index.section_ids(" ".join(texts)) if keyword_index else []
+
+    # Semantic pins first (higher precision), then keyword-index matches.
+    merged = list(dict.fromkeys(pinned + keyword_matched))
+    return merged[:MAX_NARRATIVE_SECTIONS]
 
 
-def _sections_from_case_chunks(case_chunks: list[dict]) -> list[str]:
-    """Case chunk metadata carries entities.sections_cited (from Phase 1's
-    entity_timeline_extractor) — e.g. '103 BNS', '118 BNS'. Convert those
-    into the dataset's own section_id format ('BNS_103') so they can be fed
-    straight into the pinner's output via extra_sections. Falls back to
-    scanning the raw chunk text for an already-correct ID format, in case
-    the caller passes pre-formatted chunks."""
-    sections = []
+def _sections_from_case_chunks(case_chunks: list[dict], known_ids=None) -> list[str]:
+    """Sections explicitly cited by the case documents themselves.
+
+    Phase 1's entity extractor records these as "103 BNS"; the chunk text
+    may also contain already-canonical ids. Both go through
+    data/section_ref.py, which owns the zero-padding, letter-case and
+    CRPC-is-unpadded rules — this file used to carry its own partial copy
+    of them and silently dropped any citation it normalized wrongly.
+    """
+    sections: list[str] = []
 
     for chunk in case_chunks:
         metadata = chunk.get("metadata") or {}
         entities = metadata.get("entities") or {}
         for cited in entities.get("sections_cited", []):
-            # "103 BNS" -> "BNS_103"; "420" (no act) is skipped, too ambiguous
-            # to guess an act for — better to miss it than pin the wrong act.
-            parts = cited.strip().split()
-            if len(parts) == 2:
-                number, act = parts
-                # BUGFIX: this passed `number` through unchanged — no
-                # uppercasing (a lettered cite like "120b bns" stayed
-                # lowercase) and no zero-padding (final_dataset.json zero-
-                # pads the numeric part of section_id to 3 digits for every
-                # act except CRPC — e.g. "5 BNS" needs to become "BNS_005",
-                # not "BNS_5"). Since this feeds fetch_by_ids(), which does
-                # an exact single-value match per id with no fuzzy fallback
-                # (pipeline/hybrid_retriever.py), a mismatch here silently
-                # dropped the cited section rather than pinning it — a real
-                # document citing a low-numbered or lettered section (common:
-                # IPC_498A, IPC_120B) would lose that citation entirely.
-                # Emit both the zero-padded and raw-width candidates (like
-                # hybrid_retriever.py's direct lookup already does for the
-                # same CRPC-is-unpadded reason) — fetch_by_ids() silently
-                # skips whichever one doesn't exist, so this is safe either way.
-                num_norm = number.strip().upper()
-                m = re.match(r'^(\d+)([A-Z]?)$', num_norm)
-                if m:
-                    digits, letter = m.groups()
-                    sections.append(f"{act.upper()}_{digits.zfill(3)}{letter}")
-                    sections.append(f"{act.upper()}_{digits}{letter}")
-                else:
-                    sections.append(f"{act.upper()}_{num_norm}")
-
-        # Also catch already-formatted IDs anywhere in the chunk text itself.
+            for sid in extract_section_refs(str(cited), known_ids):
+                sections.append(sid)
         sections.extend(SECTION_ID_PATTERN.findall(chunk.get("text", "")))
+        sections.extend(extract_section_refs(chunk.get("text", ""), known_ids))
 
-    # Dedupe, preserve order.
     seen, ordered = set(), []
-    for s in sections:
-        if s not in seen:
-            seen.add(s)
-            ordered.append(s)
+    for sid in sections:
+        if known_ids is not None and sid not in known_ids:
+            continue
+        if sid not in seen:
+            seen.add(sid)
+            ordered.append(sid)
     return ordered
 
 
@@ -177,8 +180,11 @@ class CaseStatuteFusion:
     def answer(self, query: str, case_id: str, case_top_k: int = 8) -> FusedResult:
         case_chunks = self._retrieve_case_chunks(query, case_id, case_top_k)
 
-        cited_sections     = _sections_from_case_chunks(case_chunks)
-        narrative_sections = _sections_from_case_narrative(case_chunks, self.pipeline.pinner, self.keyword_index)
+        known_ids          = getattr(self.pipeline, "sections", None)
+        known_ids          = known_ids.section_ids if known_ids is not None else None
+        cited_sections     = _sections_from_case_chunks(case_chunks, known_ids)
+        narrative_sections = _sections_from_case_narrative(
+            case_chunks, self.pipeline.pinner, self.keyword_index)
         # Preserve order, dedupe — narrative-pinned sections appended after
         # explicit citations, since an explicit "Section 302 IPC" in the
         # document is a stronger signal than a plain-English pattern match.

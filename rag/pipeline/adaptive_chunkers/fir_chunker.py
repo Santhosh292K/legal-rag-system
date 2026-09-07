@@ -5,6 +5,8 @@ Phase 2 — FIR chunker: Complainant -> Accused -> Incident -> Time -> Sections 
 from .base_chunker import BaseChunker, Chunk, split_by_labels
 from .generic_chunker import GenericChunker
 
+# Patterns are matched with re.IGNORECASE | re.MULTILINE semantics via
+# split_by_labels; ^ therefore anchors to a line start.
 LABEL_PATTERNS = {
     "complainant": [r"complainant\s*(?:name)?\s*[:\-]"],
     "accused":      [r"accused\s*(?:name)?\s*[:\-]"],
@@ -12,12 +14,18 @@ LABEL_PATTERNS = {
                        r"brief\s+facts\s*[:\-]", r"narration\s*[:\-]"],
     "time":           [r"(?:date|time)\s+of\s+(?:occurrence|incident)\s*[:\-]",
                         r"occurred\s+on\s*[:\-]?"],
-    "sections":        [r"(?:sections?|offen[cs]es?)\s+(?:invoked|applied)\s*[:\-]",
-                         r"under\s+section"],
+    # NOTE: a bare r"under\s+section" used to be listed here. That phrase
+    # appears constantly inside FIR narrative prose ("the accused was
+    # charged under section 302..."), so the first narrative mention became
+    # the split point and everything after it — the real "Sections
+    # Invoked" block included — collapsed into one mislabelled chunk.
+    # Anchored forms only.
+    "sections":        [r"(?:sections?|offen[cs]es?)\s+(?:invoked|applied|registered)\s*[:\-]",
+                         r"^\s*(?:u/s|under\s+sections?)\s*[:\-]",
+                         r"^\s*sections?\s*[:\-]"],
     "relief":           [r"(?:relief|action)\s+(?:sought|requested|taken)\s*[:\-]",
                           r"prayer\s*[:\-]"],
 }
-
 
 class FIRChunker(BaseChunker):
     doc_type = "FIR"
@@ -25,21 +33,15 @@ class FIRChunker(BaseChunker):
     def chunk(self, text: str, document_id: str, case_id: str,
               entities: dict | None = None) -> list[Chunk]:
         sections = split_by_labels(text, LABEL_PATTERNS)
+        chunks = self._chunks_from_sections(sections, document_id, case_id, entities)
 
-        chunks = []
-        for i, (role, content) in enumerate(sections.items()):
-            if content:
-                chunks.append(self._make(role, content, document_id, case_id, i,
-                                          metadata={"entities": entities} if entities else None))
-
-        # No labels matched at all -> this FIR doesn't follow the expected
-        # template (e.g. free-form handwritten transcript). Don't drop the
-        # document; fall back to generic chunking instead.
+        # No labels matched -> this document doesn't follow the expected
+        # template (a free-form or handwritten transcript, say). Don't drop
+        # it; fall back to generic sliding-window chunking.
         if not chunks:
-            return GenericChunker(doc_type=self.doc_type).chunk(text, document_id, case_id, entities)
-
+            return GenericChunker(doc_type=self.doc_type).chunk(
+                text, document_id, case_id, entities)
         return chunks
-
 
 if __name__ == "__main__":
     sample = """

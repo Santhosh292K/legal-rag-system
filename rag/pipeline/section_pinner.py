@@ -60,6 +60,16 @@ PIN_TOP_K = 6
 # quietly stop matching anything).
 PIN_EXPLANATION = "Pinned by section_pinner (semantic match)"
 
+# The other two "rescue" channels that can inject a section the reranker
+# didn't rank highly. They live here, beside PIN_EXPLANATION, because
+# answer_generator._select_top identifies a chunk's origin by comparing
+# against these exact strings — and they used to be bare literals retyped
+# in main.py, legal_kg.py and answer_generator.py, where a drift in any
+# one copy would silently stop that channel's rescues from being honoured
+# with no error anywhere.
+ROCCHIO_EXPLANATION   = "Rocchio pseudo-relevance feedback"
+KG_EXPLANATION_PREFIX = "KG-augmented"
+
 
 @dataclass
 class PinResult:

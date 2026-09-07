@@ -40,7 +40,12 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from main import LegalRAGPipeline
 
-STAGES = ["raw_pool", "post_rerank", "post_rocchio", "post_kg", "final"]
+# "candidates" is the post-rerank pool; "final" is the subset actually
+# placed in the generator's prompt. A gold section present in
+# candidates but absent from final was found and then dropped by the
+# final selection step, which is a different problem from never
+# retrieving it at all.
+STAGES = ["raw_pool", "post_rerank", "post_rocchio", "post_kg", "candidates", "final"]
 
 
 def stage_hits(trace: dict, gold: set[str]) -> dict[str, set[str]]:

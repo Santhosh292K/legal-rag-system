@@ -26,7 +26,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue,
 )
-from sentence_transformers import SentenceTransformer
 
 from pipeline.adaptive_chunkers import Chunk
 from pipeline.hybrid_retriever import BGE_QUERY_INSTRUCTION
@@ -52,7 +51,10 @@ class CaseIndexer:
         # one loaded via pipeline.retriever.embed_model — the same
         # double-loading pattern that caused the ablation OOM. Accept an
         # already-loaded model and only load a fresh one as a fallback.
-        self.embed_model = embed_model or SentenceTransformer(EMBEDDING_MODEL)
+        if embed_model is None:
+            from sentence_transformers import SentenceTransformer   # lazy: see HybridRetriever
+            embed_model = SentenceTransformer(EMBEDDING_MODEL)
+        self.embed_model = embed_model
         self._ensure_collection()
 
     def _ensure_collection(self):
@@ -81,9 +83,13 @@ class CaseIndexer:
         if not chunks:
             return 0
 
-        document_ids = {c.document_id for c in chunks}
-        for doc_id in document_ids:
-            self.delete_document(case_id=chunks[0].case_id, document_id=doc_id)
+        # Group by (case_id, document_id) rather than assuming every chunk
+        # belongs to chunks[0]'s case. Using the first chunk's case_id for
+        # all of them meant a batch spanning two cases issued deletes
+        # against the wrong case — a no-op that leaves stale chunks behind,
+        # or, worse, a delete that hits an unrelated case's document.
+        for case_id, doc_id in {(c.case_id, c.document_id) for c in chunks}:
+            self.delete_document(case_id=case_id, document_id=doc_id)
 
         texts = [c.text for c in chunks]
         vectors = self.embed_model.encode(

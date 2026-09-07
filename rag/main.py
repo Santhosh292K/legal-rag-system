@@ -31,9 +31,17 @@ from pipeline.irac_reranker        import IRACReranker
 from pipeline.answer_generator     import AnswerGenerator, LegalAnswer
 from pipeline.domain_router        import DomainRouter
 from pipeline.universal_translator import UniversalTranslator
-from pipeline.section_pinner       import SectionPinner, PIN_EXPLANATION
+from pipeline.section_pinner       import (
+    SectionPinner, PIN_EXPLANATION, ROCCHIO_EXPLANATION,
+)
 from pipeline.legal_kg             import LegalKnowledgeGraph, kg_augment_ranked
-from config import HYBRID_TOP_K, RERANK_TOP_K, FINAL_TOP_K, JSON_PATH, BM25_VOCAB_PATH
+from pipeline.section_store       import SectionStore
+from pipeline.irac_taxonomy       import conclusion_score, CONCLUSION_MATCH
+from qdrant_client import QdrantClient
+from config import (
+    HYBRID_TOP_K, RERANK_TOP_K, FINAL_TOP_K, JSON_PATH, BM25_VOCAB_PATH,
+    QDRANT_PATH, COLLECTION_NAME,
+)
 
 DOMAIN_TO_INTENT = {
     "civil":          "statute",
@@ -55,6 +63,11 @@ class LegalRAGPipeline:
                  # via HybridRetriever, which is what blew past the 8GB GPU
                  # and CUDA OOM'd on every single ablation variant.
                  embed_model=None,
+                 # Same sharing pattern again, for the in-memory corpus
+                 # index. evaluate.py's ablation study builds seven
+                 # pipelines in a loop; without this each one scrolls the
+                 # whole collection to build its own identical copy.
+                 section_store=None,
                  # BUGFIX: same reasoning as embed_model above, for the
                  # cross-encoder reranker instead of the embedding model.
                  # 5 of the 7 ablation variants have use_irac=True, and each
@@ -77,8 +90,22 @@ class LegalRAGPipeline:
         self.use_kg        = use_kg
 
         self._log("Loading pipeline components...")
+        # One in-memory copy of the corpus, shared by the retriever (direct
+        # section lookup, fetch_by_ids), the chunk structurer (parent/child/
+        # related) and the KG builder. Qdrant's local mode has no payload
+        # indexes, so each of those used to issue a full-collection scan per
+        # section — several hundred per query. See pipeline/section_store.py.
+        self.sections = section_store
+        if self.sections is None and qdrant_client is not None:
+            self.sections = SectionStore(client=qdrant_client,
+                                         collection_name=COLLECTION_NAME)
+
         self.retriever  = HybridRetriever(vocab_path=vocab_path, client=qdrant_client,
-                                           embed_model=embed_model)
+                                           embed_model=embed_model,
+                                           section_store=self.sections)
+        # When no client was supplied, HybridRetriever opened its own and
+        # built the store; reuse that one rather than building a second.
+        self.sections = self.retriever.sections
 
         # Shared embed_fn: reuses HybridRetriever's already-loaded bge-large
         # model rather than every embedding-aware component loading its own
@@ -131,8 +158,8 @@ class LegalRAGPipeline:
         # Gap 15: pass the shared Qdrant client so ChunkStructurer never
         # loads final_dataset.json into memory (the data is already in Qdrant).
         self.structurer = ChunkStructurer(
-            json_path  = json_path,   # fallback if client is None (tests / legacy)
-            client     = self.retriever.client if use_hierarchy else None,
+            json_path     = json_path,   # offline fallback (tests / legacy)
+            section_store = self.sections,
         )
         # llm_top_n lowered 15 -> 8 and calls run concurrently — see the
         # ROOT CAUSE note in IRACReranker.__init__ (pipeline/irac_reranker.py):
@@ -150,10 +177,7 @@ class LegalRAGPipeline:
         if use_kg:
             try:
                 self.kg = LegalKnowledgeGraph()
-                self.kg.build_from_qdrant(
-                    client          = self.retriever.client,
-                    collection_name = "legal_sections",
-                )
+                self.kg.build_from_section_store(self.sections)
                 stats = self.kg.stats()
                 self._log(f"KG ready: {stats['nodes']} nodes, {stats['edges']} edges")
             except Exception as e:
@@ -287,18 +311,29 @@ class LegalRAGPipeline:
         if translation.domain in DOMAIN_TO_INTENT and intent.confidence < 0.5:
             intent.label = DOMAIN_TO_INTENT[translation.domain]
 
-        # Override intent to 'punitive' when pinner identified death/accident/crime sections
-        # This prevents "procedural" label from killing IRAC scores for punitive sections
-        PUNITIVE_PIN_PREFIXES = {
-            "BNS_106", "IPC_304A", "IPC_304", "IPC_300", "IPC_302",
-            "BNS_261", "IPC_279", "IPC_392", "IPC_390", "BNS_199",
-            "IPC_166A", "PCA_013", "PCA_014", "IPC_498A", "IPC_304B",
-        }
-        if pin_result.section_ids:
-            has_punitive_pin = any(s in PUNITIVE_PIN_PREFIXES for s in pin_result.section_ids)
-            if has_punitive_pin and intent.label not in ("punitive",):
-                intent.label = "punitive"
-                self._log(f"  Intent overridden → punitive (punitive pin detected)")
+        # If the pinner deterministically surfaced sections whose own
+        # conclusion_type is punitive, make sure "punitive" is among the
+        # active intent labels so the IRAC conclusion component can reward
+        # them. This REPLACES a hardcoded 15-entry allowlist of section ids
+        # that (a) could not generalise past the scenarios someone thought
+        # to enumerate and (b) was justified by a scoring bonus that never
+        # actually fired — see pipeline/irac_taxonomy.py for why every
+        # conclusion-match branch in the reranker was dead code.
+        #
+        # It also ADDS to intent.labels rather than overwriting
+        # intent.label. Overwriting discarded a correctly-classified
+        # procedural or definitional intent, which is what the answer
+        # prompt and the query router downstream both read.
+        if pin_result.section_ids and self.sections is not None:
+            pinned_conclusions = [
+                (self.sections.get(sid) or {}).get("conclusion_type", "")
+                for sid in pin_result.section_ids
+            ]
+            if any(conclusion_score(["punitive"], c) == CONCLUSION_MATCH
+                   for c in pinned_conclusions):
+                if "punitive" not in (intent.labels or []):
+                    intent.labels = list(intent.labels or [intent.label]) + ["punitive"]
+                    self._log("  Added 'punitive' to intent labels (punitive pin detected)")
 
         # Act filter: only lock to one act for single-ACT high-confidence queries.
         # NEVER lock when pinned sections span multiple acts.
@@ -409,6 +444,11 @@ class LegalRAGPipeline:
                 StructuredChunk(
                     section_id=vc.chunk.section_id, content=vc.chunk.content,
                     act_name=vc.chunk.payload.get("act_name", ""),
+                    # act_code matters even in the no-hierarchy ablation:
+                    # the IRAC reranker's act bonus compares intent.act_hint
+                    # against it, and an empty value silently disables that
+                    # signal for the whole variant.
+                    act_code=vc.chunk.act_code,
                     chapter=vc.chunk.chapter, category=vc.chunk.category,
                     validity_label=vc.validity_label, warning=vc.warning,
                     penalized_score=vc.penalized_score,
@@ -545,7 +585,7 @@ class LegalRAGPipeline:
                         ranked.append(_RC(
                             chunk=fb_c,
                             final_score=0.35, irac_score=0.35,
-                            explanation="Rocchio pseudo-relevance feedback",
+                            explanation=ROCCHIO_EXPLANATION,
                         ))
                         ranked_ids_now.add(fb_c.section_id)
                         added += 1
@@ -642,7 +682,12 @@ class LegalRAGPipeline:
             known_gaps=all_gaps)
 
         if debug_trace is not None:
-            debug_trace["final"] = list(answer.retrieved_section_ids)
+            # 'final' is what the generator was shown, which is what
+            # evaluate.py measures against; 'candidates' is the wider
+            # post-rerank pool, so a section present in one but not the
+            # other localises the loss to the final selection step.
+            debug_trace["final"]      = list(answer.retrieved_section_ids)
+            debug_trace["candidates"] = list(answer.candidate_section_ids)
 
         if all_gaps:
             answer.warnings = list(set((answer.warnings or []) + all_gaps))
