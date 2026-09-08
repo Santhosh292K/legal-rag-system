@@ -213,13 +213,13 @@ anywhere. Integration tests are opt-in (`-m integration`) and skip
 themselves cleanly when the index or the embedding model is missing —
 run them after every re-index.
 
-The suite exists mainly to lock down the class of bug this
-pipeline has actually suffered: code and data silently disagreeing, with
-no error anywhere.
-Notably they assert that the BM25 index is self-consistent, that every
-IRAC conclusion-type family still matches real corpus values, that the
-knowledge graph contains no unresolvable nodes, that chunking loses no
-text, and that BM25-only recall on the benchmark stays above a floor.
+The suite exists mainly to lock down the class of bug this pipeline has
+actually suffered: code and data silently disagreeing, with no error
+anywhere. So it asserts against the real dataset that the BM25 index is
+self-consistent, that every IRAC conclusion-type family still matches real
+corpus values, that the knowledge graph contains no unresolvable nodes,
+that chunking loses no text, and that BM25-only recall on the benchmark
+stays above a floor.
 
 ---
 
