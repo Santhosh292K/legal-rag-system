@@ -590,18 +590,38 @@ class DomainRouter:
                     act_semantic_hits[act] = score
 
         # Tier 2 — domain-priority fallback for acts with no direct evidence.
+        #
+        # BUGFIX: this used `domain.priority * domain_scores[name]` raw, but
+        # domain_scores holds two incompatible things depending on how the
+        # router was constructed: cosine similarities in [0,1] when an
+        # embed_fn is wired up, and integer regex HIT COUNTS otherwise.
+        # A criminal-domain query could therefore contribute
+        # 9 * 0.55 = 4.95 in one mode and 9 * 8 = 72 in the other, which
+        # silently changed how much weight Tier 2 carried against the
+        # Tier-1.5 semantic term (x100) — the fallback could outrank real
+        # per-act evidence in regex mode and be irrelevant in embedding
+        # mode. Normalize to a common [0,1] scale first so the tiers keep
+        # their intended ordering in both.
+        max_domain_score = max(domain_scores.values(), default=0) or 1
         act_domain_fallback: dict[str, float] = {}
         for name in activated_names:
             domain = next(d for d in DOMAINS if d.name == name)
-            score = domain_scores.get(name, 1)
+            normalized = domain_scores.get(name, max_domain_score) / max_domain_score
             for act in domain.acts:
-                act_domain_fallback[act] = act_domain_fallback.get(act, 0) + domain.priority * score
+                act_domain_fallback[act] = (
+                    act_domain_fallback.get(act, 0.0) + domain.priority * normalized
+                )
 
+        # Tier weights are deliberately an order of magnitude apart, so a
+        # literal act mention always beats behavioural similarity, which
+        # always beats "this act belongs to an activated domain".
+        # Tier 2 is now bounded by max(domain.priority) * n_activated, which
+        # stays well under the 100 the semantic tier starts at.
         candidate_acts = set(act_domain_fallback) | set(act_specific_hits) | set(act_semantic_hits)
         act_priority = {
             act: act_specific_hits.get(act, 0) * 1000
                  + act_semantic_hits.get(act, 0.0) * 100
-                 + act_domain_fallback.get(act, 0)
+                 + act_domain_fallback.get(act, 0.0)
                  + GENERAL_CODE_BONUS.get(act, 0)
             for act in candidate_acts
         }

@@ -144,6 +144,20 @@ class ALEA:
     def __init__(self, embed_fn, ontology_path: str = ONTOLOGY_PATH):
         self.embed_fn = embed_fn
         self.ontology = load_ontology(ontology_path)
+        # Element descriptions are static ontology text, so their vectors
+        # are computed once and reused. They used to be re-embedded inside
+        # the per-section loop of score_sections(), i.e. on every scored
+        # section of every query — 41 embeddings of unchanging text per
+        # call, for no benefit. Populated lazily so construction stays
+        # cheap and this never embeds an ontology entry nothing asks for.
+        self._element_vectors: dict[str, "np.ndarray"] = {}
+
+    def _element_vectors_for(self, section_id: str, elements: list[dict]):
+        cached = self._element_vectors.get(section_id)
+        if cached is None:
+            cached = np.asarray(self.embed_fn([e["description"] for e in elements]))
+            self._element_vectors[section_id] = cached
+        return cached
 
     def score_sections(
         self,
@@ -184,8 +198,7 @@ class ALEA:
             section = self.ontology[section_id]
             elements = section["elements"]
 
-            elem_texts = [e["description"] for e in elements]
-            elem_vecs  = np.array(self.embed_fn(elem_texts))
+            elem_vecs = self._element_vectors_for(section_id, elements)
 
             sim_matrix = _cosine_sim_matrix(elem_vecs, fact_vecs)   # [n_elements x n_facts]
             weighted_matrix = sim_matrix * fact_weights[np.newaxis, :]  # w(e) * sim(ri,e)

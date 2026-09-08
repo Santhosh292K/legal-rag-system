@@ -23,7 +23,7 @@ Query → Intent Classification → Query Expansion → Hybrid Retrieval (BM25 +
 | **Temporal Validity Filter** | Filters out repealed/superseded legal sections based on effective dates |
 | **Hierarchy-Aware Chunk Structurer** | Preserves parent-child relationships across Acts → Sections → Sub-sections |
 | **IRAC Reranker** | Scores chunks using Issue, Rule, Application, Conclusion legal framework |
-| **Grounded Answer Generator** | Produces answers with section-level citations using Gemini / Ollama |
+| **Grounded Answer Generator** | Produces answers with section-level citations via local Ollama |
 | **Rocchio Query Expansion** | Pseudo-relevance feedback to expand sparse legal queries |
 | **OCR Support** | Extracts text from scanned PDFs via Tesseract |
 | **Case Document Pipeline** | Indexes FIRs, charge sheets, affidavits, and other legal documents |
@@ -98,7 +98,7 @@ rag/
 
 ### Prerequisites
 - Python 3.10+
-- [Ollama](https://ollama.com/) (for local LLM inference) — optional if using Gemini only
+- [Ollama](https://ollama.com/) — required; every LLM call in this package goes to it
 - Tesseract OCR binary (for PDF scanning support)
 
 ```bash
@@ -115,10 +115,15 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Nothing in `.env` is required — every setting has a working default in
+`config.py`. (Earlier versions declared `GEMINI_API_KEY` as required; no
+module ever read it. All generation is local Ollama.)
 
-```env
-GEMINI_API_KEY=your_gemini_api_key_here   # Get free key at https://aistudio.google.com
+Pull the two models the pipeline calls:
+
+```bash
+ollama pull qwen2.5:3b     # translation, intent, expansion, IRAC refinement
+ollama pull qwen2.5:14b    # answer generation
 ```
 
 Optional overrides (defaults are set in `config.py`):
@@ -199,16 +204,22 @@ python data/case_indexer.py /path/to/case_documents/
 ## ✅ Tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q                    # 189 tests, no models needed
+python -m pytest -m integration -q            # 12 more, against the live index
 ```
 
-130 tests, no models or LLM required — they run against the real dataset
-and the real scoring code. They exist mainly to lock down the class of bug
-this pipeline has actually suffered: code and data silently disagreeing.
-Notably they assert that the BM25 index is self-consistent, that every
-IRAC conclusion-type family still matches real corpus values, that the
-knowledge graph contains no unresolvable nodes, that chunking loses no
-text, and that BM25-only recall on the benchmark stays above a floor.
+The default run needs no models, no LLM and no built index, so it works
+anywhere. Integration tests are opt-in (`-m integration`) and skip
+themselves cleanly when the index or the embedding model is missing —
+run them after every re-index.
+
+The suite exists mainly to lock down the class of bug this pipeline has
+actually suffered: code and data silently disagreeing, with no error
+anywhere. So it asserts against the real dataset that the BM25 index is
+self-consistent, that every IRAC conclusion-type family still matches real
+corpus values, that the knowledge graph contains no unresolvable nodes,
+that chunking loses no text, and that BM25-only recall on the benchmark
+stays above a floor.
 
 ---
 
@@ -275,12 +286,46 @@ All tunable parameters live in [`config.py`](config.py):
 | **Knowledge graph** | NetworkX |
 | **Embeddings** | `BAAI/bge-large-en-v1.5` via `sentence-transformers` |
 | **Reranker** | `BAAI/bge-reranker-large` |
-| **LLM (cloud)** | Google Gemini via `google-genai` |
-| **LLM (local)** | Ollama (`qwen2.5`) |
+| **LLM** | Ollama (`qwen2.5:3b` + `qwen2.5:14b`), local only |
 | **Sparse Retrieval** | Okapi BM25 (own implementation, `data/bm25.py`) |
 | **API Server** | FastAPI + Uvicorn (`../backend`) |
 | **OCR** | PyMuPDF + Tesseract |
 | **Evaluation** | ROUGE, NLTK, scikit-learn |
+
+---
+
+## ⚠️ Known limitations
+
+**The corpus is summarised, not statutory text.** `content` holds a
+paraphrase of each section — median 171 characters, and `IPC_302` is 65:
+
+> "Punishment for murder is death or imprisonment for life and fine."
+
+Provisos, exceptions, explanations and ingredient lists are not indexed at
+all. This bounds the whole system: answers cannot quote statutory
+language, "citation-grounded" can only mean "grounded in a summary", and
+ALEA scores case evidence against paraphrases. It is also why
+`answer_coverage` and ROUGE stay low in evaluation no matter how well
+retrieval performs — those metrics compare against real statutory wording
+the index does not contain. Fixing it means re-sourcing the dataset with
+full section text; no code change reaches it. `data/indexer.py` prints a
+corpus report (`data/corpus_report.py`) on every build so the limitation
+stays visible.
+
+**No case-law index.** The corpus is statutes only. A `case_law` intent is
+classified and then answered from statutory sections; the intent
+classifier's own prompt says so, but the answer does not always make it
+obvious.
+
+**617 dangling cross-references.** `meta.related_sections` entries that
+name no indexed section (bare numbers with no act, mostly) are dropped at
+index time rather than becoming unresolvable graph nodes.
+
+**Embedded Qdrant has no payload indexes.** Filters are evaluated by full
+scan in local mode. Hot section lookups go through
+`pipeline/section_store.py` instead, but `act_code`/`status` filters on
+retrieval are still linear. Point at a real Qdrant server for a larger
+corpus — the indexer already creates the right indexes.
 
 ---
 

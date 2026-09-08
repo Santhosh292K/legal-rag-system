@@ -76,6 +76,12 @@ def reciprocal_rank_fusion(
     rank 10 is only ~0.002, which gives the merger almost nothing to work
     with. At k=20 it is ~0.014.
 
+    SIDE EFFECT: writes the fused score onto each input chunk's
+    `rrf_score` and returns those same objects. TemporalFilter depends on
+    that (penalized_score is derived from rrf_score), and retrieve()
+    depends on the second, cross-variant fusion overwriting the first —
+    but it does mean two fusions over the same objects cannot be compared.
+
     `weights` scales each list's contribution. Plain (unweighted) RRF sums
     every list equally, which is correct when the lists are INDEPENDENT
     evidence — e.g. a dense ranking and a sparse ranking of the same query.
@@ -130,10 +136,20 @@ class HybridRetriever:
             embed_model = SentenceTransformer(EMBEDDING_MODEL)
         self.embed_model = embed_model
 
-        with open(vocab_path, "r") as f:
+        # Every artifact below is generated, gitignored, and written by a
+        # single indexer run. A fresh clone has none of them, so report
+        # that as the actionable thing it is rather than letting a bare
+        # FileNotFoundError surface several frames deep.
+        vocab_file = Path(vocab_path)
+        if not vocab_file.exists():
+            raise IndexMismatchError(
+                f"{vocab_file} is missing",
+                "The BM25 vocabulary is generated; a fresh checkout has no index yet.",
+            )
+        with open(vocab_file, "r") as f:
             self.vocab: dict[str, int] = json.load(f)
 
-        idf_path = Path(vocab_path).parent / "bm25_idf.json"
+        idf_path = vocab_file.parent / "bm25_idf.json"
         if not idf_path.exists():
             raise IndexMismatchError(
                 f"{idf_path} is missing",
@@ -373,7 +389,26 @@ class HybridRetriever:
         act_filter:         str | None    = None,
         status_filter:      str | None    = None,
         dense_act_filter:   str | None    = None,
+        direct_lookup_query: str | None   = None,
     ) -> list[RetrievedChunk]:
+        """direct_lookup_query: the text to scan for EXPLICIT section
+        references, which are then pinned to the front and guaranteed a
+        place in the result.
+
+        This must be the USER'S OWN WORDS, not an expanded variant.
+        Stage 0b's offline synonym rules emit literal section numbers as
+        recall hints — "stole" expands to "... IPC 378 IPC 379 IPC 390
+        IPC 392" — and scanning the expanded text made the retriever treat
+        those guesses as though the user had named them: pinned to rank 1,
+        weight 2.0 here, and floored at 0.85 by the reranker. Measured
+        effect: "a hacker stole my OTP and drained my account" returned
+        four theft sections above ITA_066, because the word "stole"
+        triggered the theft rule. Those hints are still valuable, but as
+        ordinary query text competing on retrieval merit — which is what
+        happens when they are left out of this scan.
+
+        Defaults to the first query for backward compatibility.
+        """
 
         # Sparse gets the act filter (keyword false positives are common and
         # the filter genuinely reduces noise); dense does not, so cross-act
@@ -397,12 +432,15 @@ class HybridRetriever:
         unique_queries = list(dict.fromkeys(q.strip() for q in queries if q and q.strip()))
 
         # ── Step 1: direct section hits (always included) ─────────────────────
+        # Scanned from the user's own words only — see direct_lookup_query.
+        lookup_text = direct_lookup_query
+        if lookup_text is None:
+            lookup_text = unique_queries[0] if unique_queries else ""
         direct_chunks, seen_ids = [], set()
-        for query in unique_queries:
-            for chunk in self._direct_section_lookup(query):
-                if chunk.section_id not in seen_ids:
-                    direct_chunks.append(chunk)
-                    seen_ids.add(chunk.section_id)
+        for chunk in self._direct_section_lookup(lookup_text):
+            if chunk.section_id not in seen_ids:
+                direct_chunks.append(chunk)
+                seen_ids.add(chunk.section_id)
 
         # ── Step 2: per-variant dense+sparse fusion ──────────────────────────
         # Within one query, dense and sparse are independent evidence about

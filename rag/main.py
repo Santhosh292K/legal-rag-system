@@ -398,6 +398,11 @@ class LegalRAGPipeline:
             queries=all_queries, top_k=HYBRID_TOP_K,
             act_filter=effective_act, status_filter=None,
             dense_act_filter=None,   # Gap 9: dense never gets the act filter
+            # Only the user's own words count as "you named this section".
+            # The expanded variants carry regex-guessed section numbers as
+            # recall hints; treating those as explicit references pinned
+            # speculative sections to rank 1 — see retrieve()'s docstring.
+            direct_lookup_query=user_query,
         )
         acts_found = set(c.act_code for c in bm25_chunks)
         self._log(f"  BM25/dense: {len(bm25_chunks)} chunks from acts: {acts_found}")
@@ -482,7 +487,13 @@ class LegalRAGPipeline:
         rerank_query = f"{legal_base} {user_query}" if legal_base != user_query else user_query
         if self.use_irac and self.reranker:
             ranked = self.reranker.rerank(
-                query=rerank_query, intent=intent, chunks=structured, top_k=RERANK_TOP_K)
+                query=rerank_query, intent=intent, chunks=structured,
+                top_k=RERANK_TOP_K,
+                # Same reasoning as the retriever's direct_lookup_query:
+                # the section-number guarantee is for sections the USER
+                # named, and rerank_query includes the LLM's translated
+                # text, which routinely invents section numbers.
+                direct_query=user_query)
         else:
             # Ablation: skip IRAC reranker — use retrieval score as final score
             from pipeline.irac_reranker import RankedChunk
@@ -532,6 +543,9 @@ class LegalRAGPipeline:
                         queries=[rocchio_query], top_k=6,
                         act_filter=effective_act, status_filter=None,
                         dense_act_filter=None,
+                        # issue_tags are machine-generated feedback terms,
+                        # never a user's explicit section reference.
+                        direct_lookup_query="",
                     )
                     from pipeline.temporal_filter import ValidatedChunk as _VC
                     # BUGFIX: this omitted `is_valid`, a required field with

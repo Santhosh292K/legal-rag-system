@@ -171,7 +171,12 @@ class IRACReranker:
     """
 
     def __init__(self, llm_top_n: int = 8, cross_encoder=None, max_workers: int = 4,
-                 ce_batch_size: int = 32):
+                 ce_batch_size: int = 32, use_cross_encoder: bool = True):
+        """use_cross_encoder=False skips Stage 2 entirely and does NOT try
+        to load a model. Without it, passing cross_encoder=None always
+        meant "load bge-reranker-large from disk or the network", so an
+        ablation variant or a test that wanted the lexical-only path had no
+        way to say so — it just silently downloaded 1.3 GB."""
         self.llm_top_n     = llm_top_n
         self.max_workers   = max_workers
         self.ce_batch_size = ce_batch_size
@@ -179,9 +184,9 @@ class IRACReranker:
         # study builds five use_irac=True variants in a loop; each loading
         # its own copy of bge-reranker-large is what used to exhaust an 8GB
         # GPU and CUDA-OOM every variant.
-        self.cross_encoder = cross_encoder
-        self.use_cross_enc = cross_encoder is not None
-        if self.cross_encoder is None:
+        self.cross_encoder = cross_encoder if use_cross_encoder else None
+        self.use_cross_enc = self.cross_encoder is not None
+        if use_cross_encoder and self.cross_encoder is None:
             try:
                 from sentence_transformers import CrossEncoder
                 self.cross_encoder = CrossEncoder(RERANKER_MODEL)
@@ -204,6 +209,7 @@ class IRACReranker:
         intent: QueryIntent,
         chunks: list[StructuredChunk],
         top_k:  int = RERANK_TOP_K,
+        direct_query: str | None = None,
     ) -> list[RankedChunk]:
         """Three-stage cascade: cheap lexical -> cross-encoder -> LLM.
 
@@ -224,7 +230,15 @@ class IRACReranker:
         # IPC"). Parsing lives in data/section_ref.py so this agrees with
         # the retriever's own direct-lookup fast path instead of keeping a
         # second, subtly different regex.
-        direct_ids = set(extract_section_refs(query, {c.section_id for c in chunks}))
+        # direct_query is the user's own words. `query` is the reranking
+        # text, which concatenates the LLM's translated query — and that
+        # routinely contains invented section numbers, which would then be
+        # floored at 0.85 and forced into the answer as though the user
+        # had asked for them by name.
+        direct_ids = set(extract_section_refs(
+            direct_query if direct_query is not None else query,
+            {c.section_id for c in chunks},
+        ))
 
         # ── Stage 1: cheap metadata scoring (all candidates) ──────────────
         ranked: list[RankedChunk] = []
