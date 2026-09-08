@@ -204,12 +204,18 @@ python data/case_indexer.py /path/to/case_documents/
 ## ✅ Tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q                    # 189 tests, no models needed
+python -m pytest -m integration -q            # 12 more, against the live index
 ```
 
-130 tests, no models or LLM required — they run against the real dataset
-and the real scoring code. They exist mainly to lock down the class of bug
-this pipeline has actually suffered: code and data silently disagreeing.
+The default run needs no models, no LLM and no built index, so it works
+anywhere. Integration tests are opt-in (`-m integration`) and skip
+themselves cleanly when the index or the embedding model is missing —
+run them after every re-index.
+
+The suite exists mainly to lock down the class of bug this
+pipeline has actually suffered: code and data silently disagreeing, with
+no error anywhere.
 Notably they assert that the BM25 index is self-consistent, that every
 IRAC conclusion-type family still matches real corpus values, that the
 knowledge graph contains no unresolvable nodes, that chunking loses no
