@@ -60,6 +60,7 @@ from data.bm25_tokenizer import tokenize, build_search_text, TOKENIZER_VERSION
 from data.index_manifest import build_manifest, write_manifest
 from data.payload import build_payload, resolve_related_refs
 from data.bm25 import build_vocab, compute_idf, bm25_document_weights
+from data.corpus_report import corpus_report, format_corpus_report
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -204,7 +205,9 @@ class LegalIndexer:
 
         total = self.client.count(COLLECTION_NAME).count
         print(f"\nIndexed : {total} points in '{COLLECTION_NAME}'")
-        print(f"Cross-references resolved; {dropped_refs} dangling reference(s) dropped.")
+        print()
+        print(format_corpus_report(corpus_report(records), dropped_refs))
+        print()
         if failed:
             print(f"Failed  : {len(failed)}")
             for f_ in failed[:3]:

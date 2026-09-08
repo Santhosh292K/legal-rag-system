@@ -288,6 +288,41 @@ All tunable parameters live in [`config.py`](config.py):
 
 ---
 
+## ⚠️ Known limitations
+
+**The corpus is summarised, not statutory text.** `content` holds a
+paraphrase of each section — median 171 characters, and `IPC_302` is 65:
+
+> "Punishment for murder is death or imprisonment for life and fine."
+
+Provisos, exceptions, explanations and ingredient lists are not indexed at
+all. This bounds the whole system: answers cannot quote statutory
+language, "citation-grounded" can only mean "grounded in a summary", and
+ALEA scores case evidence against paraphrases. It is also why
+`answer_coverage` and ROUGE stay low in evaluation no matter how well
+retrieval performs — those metrics compare against real statutory wording
+the index does not contain. Fixing it means re-sourcing the dataset with
+full section text; no code change reaches it. `data/indexer.py` prints a
+corpus report (`data/corpus_report.py`) on every build so the limitation
+stays visible.
+
+**No case-law index.** The corpus is statutes only. A `case_law` intent is
+classified and then answered from statutory sections; the intent
+classifier's own prompt says so, but the answer does not always make it
+obvious.
+
+**617 dangling cross-references.** `meta.related_sections` entries that
+name no indexed section (bare numbers with no act, mostly) are dropped at
+index time rather than becoming unresolvable graph nodes.
+
+**Embedded Qdrant has no payload indexes.** Filters are evaluated by full
+scan in local mode. Hot section lookups go through
+`pipeline/section_store.py` instead, but `act_code`/`status` filters on
+retrieval are still linear. Point at a real Qdrant server for a larger
+corpus — the indexer already creates the right indexes.
+
+---
+
 ## 📄 License
 
 This project is for research and academic purposes.
