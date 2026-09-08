@@ -149,8 +149,17 @@ def _preflight_check_pipeline_import(py: str) -> bool:
     project's pipeline/ directory rather than some other installed
     package of the same name. Returns True if OK, False (with a specific,
     actionable message) if something is shadowing it."""
+    # Imports a real SUBMODULE, not just the package. pipeline/__init__.py
+    # is intentionally lazy (importing it eagerly used to drag in torch,
+    # ollama and networkx for any consumer of any leaf utility), so
+    # `import pipeline` alone now succeeds even when a dependency is
+    # missing entirely — which would make this preflight pass and then let
+    # every real step below fail. Importing pipeline.intent_classifier
+    # exercises the dependency chain this check exists to validate, and is
+    # the exact module named in the failure message below.
     result = subprocess.run(
-        [py, "-c", "import pipeline; print(pipeline.__file__)"],
+        [py, "-c",
+         "import pipeline, pipeline.intent_classifier; print(pipeline.__file__)"],
         cwd=str(RAG_ROOT), env=_SUBPROCESS_ENV,
         capture_output=True, text=True,
     )

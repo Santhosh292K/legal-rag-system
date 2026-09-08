@@ -136,10 +136,20 @@ class HybridRetriever:
             embed_model = SentenceTransformer(EMBEDDING_MODEL)
         self.embed_model = embed_model
 
-        with open(vocab_path, "r") as f:
+        # Every artifact below is generated, gitignored, and written by a
+        # single indexer run. A fresh clone has none of them, so report
+        # that as the actionable thing it is rather than letting a bare
+        # FileNotFoundError surface several frames deep.
+        vocab_file = Path(vocab_path)
+        if not vocab_file.exists():
+            raise IndexMismatchError(
+                f"{vocab_file} is missing",
+                "The BM25 vocabulary is generated; a fresh checkout has no index yet.",
+            )
+        with open(vocab_file, "r") as f:
             self.vocab: dict[str, int] = json.load(f)
 
-        idf_path = Path(vocab_path).parent / "bm25_idf.json"
+        idf_path = vocab_file.parent / "bm25_idf.json"
         if not idf_path.exists():
             raise IndexMismatchError(
                 f"{idf_path} is missing",
