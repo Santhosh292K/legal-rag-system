@@ -112,15 +112,27 @@ class LegalIndexer:
 
         print(f"Collection '{COLLECTION_NAME}' created with dense + sparse vectors.")
 
-    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+    def _embed_all(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
+        """Encode the whole corpus in batches.
+
+        The previous code called encode([one_text]) once per record inside
+        the indexing loop — a batch size of ONE, 3394 separate forward
+        passes. Measured on CPU that ran at ~2.4 records/s (~24 minutes);
+        batching is several times faster and is the only reason
+        batch_size was being passed at all.
+        """
         return self.embed_model.encode(
             texts,
             normalize_embeddings=True,
-            show_progress_bar=False,
-            batch_size=32,
+            show_progress_bar=True,
+            batch_size=batch_size,
         ).tolist()
 
-    def run(self, batch_size: int = 64):
+    def run(self, batch_size: int = 64, embed_batch_size: int = 32):
+        """batch_size is the Qdrant upsert size; embed_batch_size is the
+        encoder's. They are separate knobs — the first is about network/IO
+        chunking, the second about GPU/CPU memory — and conflating them
+        makes one of the two wrong on any machine."""
         with open(self.json_path, "r", encoding="utf-8") as f:
             records = json.load(f)
 
@@ -147,13 +159,16 @@ class LegalIndexer:
         avgdl = sum(len(t) for t in tokenized_corpus) / max(len(tokenized_corpus), 1)
         print(f"Average document length: {avgdl:.1f} tokens")
 
+        print("Encoding dense vectors...")
+        dense_vectors = self._embed_all(all_texts, batch_size=embed_batch_size)
+
         points: list[PointStruct] = []
         failed: list[dict] = []
         dropped_refs = 0
 
         for i, record in enumerate(tqdm(records, desc="Indexing")):
             try:
-                dense_vec = self._embed_batch([all_texts[i]])[0]
+                dense_vec = dense_vectors[i]
 
                 weights    = bm25_document_weights(tokenized_corpus[i], vocab, avgdl)
                 payload    = build_payload(record)

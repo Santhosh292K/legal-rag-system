@@ -23,7 +23,7 @@ Query → Intent Classification → Query Expansion → Hybrid Retrieval (BM25 +
 | **Temporal Validity Filter** | Filters out repealed/superseded legal sections based on effective dates |
 | **Hierarchy-Aware Chunk Structurer** | Preserves parent-child relationships across Acts → Sections → Sub-sections |
 | **IRAC Reranker** | Scores chunks using Issue, Rule, Application, Conclusion legal framework |
-| **Grounded Answer Generator** | Produces answers with section-level citations using Gemini / Ollama |
+| **Grounded Answer Generator** | Produces answers with section-level citations via local Ollama |
 | **Rocchio Query Expansion** | Pseudo-relevance feedback to expand sparse legal queries |
 | **OCR Support** | Extracts text from scanned PDFs via Tesseract |
 | **Case Document Pipeline** | Indexes FIRs, charge sheets, affidavits, and other legal documents |
@@ -98,7 +98,7 @@ rag/
 
 ### Prerequisites
 - Python 3.10+
-- [Ollama](https://ollama.com/) (for local LLM inference) — optional if using Gemini only
+- [Ollama](https://ollama.com/) — required; every LLM call in this package goes to it
 - Tesseract OCR binary (for PDF scanning support)
 
 ```bash
@@ -115,10 +115,15 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Nothing in `.env` is required — every setting has a working default in
+`config.py`. (Earlier versions declared `GEMINI_API_KEY` as required; no
+module ever read it. All generation is local Ollama.)
 
-```env
-GEMINI_API_KEY=your_gemini_api_key_here   # Get free key at https://aistudio.google.com
+Pull the two models the pipeline calls:
+
+```bash
+ollama pull qwen2.5:3b     # translation, intent, expansion, IRAC refinement
+ollama pull qwen2.5:14b    # answer generation
 ```
 
 Optional overrides (defaults are set in `config.py`):
@@ -275,8 +280,7 @@ All tunable parameters live in [`config.py`](config.py):
 | **Knowledge graph** | NetworkX |
 | **Embeddings** | `BAAI/bge-large-en-v1.5` via `sentence-transformers` |
 | **Reranker** | `BAAI/bge-reranker-large` |
-| **LLM (cloud)** | Google Gemini via `google-genai` |
-| **LLM (local)** | Ollama (`qwen2.5`) |
+| **LLM** | Ollama (`qwen2.5:3b` + `qwen2.5:14b`), local only |
 | **Sparse Retrieval** | Okapi BM25 (own implementation, `data/bm25.py`) |
 | **API Server** | FastAPI + Uvicorn (`../backend`) |
 | **OCR** | PyMuPDF + Tesseract |

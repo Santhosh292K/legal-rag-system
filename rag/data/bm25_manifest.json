@@ -1,0 +1,13 @@
+{
+  "avgdl": 42.339423,
+  "bm25_b": 0.75,
+  "bm25_k1": 1.2,
+  "built_at": "2026-09-07T12:39:56+00:00",
+  "collection_name": "legal_sections",
+  "corpus_fingerprint": "dfc7704a69642854b5e4c02502190593d18dbefab2ee17731f373c400adebdce",
+  "index_format_version": 2,
+  "n_docs": 3394,
+  "tokenizer_version": 3,
+  "vocab_fingerprint": "a2e8e2cd617cef39f07b7ab3c0d78ead94e6e7ddb169bdbfdc1987bd708ef629",
+  "vocab_size": 3896
+}

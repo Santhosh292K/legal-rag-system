@@ -418,9 +418,22 @@ class AnswerGenerator:
             recall       = 0.0
         citation_ok = recall >= 0.5
 
+        # Retrieval quality is the FLOOR; citation recall only lifts a
+        # already-decent answer to "high".
+        #
+        # BUGFIX: the medium band used to be
+        #     avg >= LOW_RELEVANCE_THRESHOLD or recall >= 0.25
+        # — so an answer that dutifully cited most of a badly-retrieved
+        # context reported "medium" even when every section it cited
+        # scored ~0.05. That is the same failure the earlier
+        # `len(citations) > 0` disjunct had, just graded: citing garbage
+        # cannot be evidence that the garbage was right. generate() then
+        # had to override the result back to "low" whenever
+        # weak_retrieval was set, which meant the two layers actively
+        # disagreed. Recall is now only ever a promotion signal.
         if retrieval_ok and citation_ok:
             return "high"
-        elif avg >= LOW_RELEVANCE_THRESHOLD or recall >= 0.25:
+        elif avg >= LOW_RELEVANCE_THRESHOLD:
             return "medium"
         return "low"
 

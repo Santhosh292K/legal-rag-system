@@ -106,8 +106,12 @@ def test_named_repealed_section_is_not_scored_as_good_law():
 
 
 def test_falls_back_gracefully_without_a_cross_encoder():
-    r = IRACReranker(llm_top_n=0, cross_encoder=None, max_workers=1)
-    r.use_cross_enc, r.cross_encoder = False, None
+    # use_cross_encoder=False must not attempt to load a model. Before this
+    # existed, cross_encoder=None unconditionally meant "download
+    # bge-reranker-large", so this test hung for minutes.
+    r = IRACReranker(llm_top_n=0, cross_encoder=None, max_workers=1,
+                     use_cross_encoder=False)
+    assert r.cross_encoder is None and r.use_cross_enc is False
     chunks = [_chunk("IPC_302", "punishment for murder"),
               _chunk("IPC_001", "unrelated contract provision")]
     out = r.rerank("punishment for murder", INTENT, chunks, top_k=2)

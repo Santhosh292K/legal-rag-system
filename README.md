@@ -20,7 +20,7 @@ Each has its own README with full detail: [`rag/README.md`](rag/README.md),
 ## Quick start
 
 **1. The pipeline's data** — dataset indexed into Qdrant, BM25 index built,
-and a Gemini key or local Ollama model for answer generation. See
+and a running local Ollama with `qwen2.5:3b` and `qwen2.5:14b`. See
 [`rag/README.md`](rag/README.md) Setup/Usage; this repo ships with
 `rag/data/final_dataset.json`, `rag/qdrant_db`, and `rag/.env` already
 populated for local dev, so you likely only need to confirm Ollama is
